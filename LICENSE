@@ -1,7 +1,22 @@
-MIT License
+MIT License (адаптированная для игровых плагинов Rust)
+MIT License (adapted for Rust game plugins)
 
 Copyright (c) 2025 Robin Play
 
+---
+
+**РУССКИЙ:**
+Настоящим предоставляется разрешение бесплатно использовать, копировать, изменять, объединять, публиковать, распространять, сублицензировать и/или продавать копии данного программного обеспечения (далее — "ПО"), а также разрешать лицам, получившим ПО, делать это без ограничений, при соблюдении следующих условий:
+
+1. Во всех копиях или значимых частях ПО должно сохраняться уведомление об авторских правах и данный текст лицензии.
+2. При использовании плагинов в панелях игровых серверов или игровых хостингов должно быть явно указано авторство: "Плагин от Robin Play" или аналогичное упоминание.
+3. Запрещается удалять или изменять упоминание об авторстве в исходном коде или сопроводительных материалах.
+
+ПО предоставляется «КАК ЕСТЬ», без каких-либо гарантий, явных или подразумеваемых, включая (но не ограничиваясь) гарантии товарной пригодности, соответствия определенной цели и ненарушения прав. Ни при каких обстоятельствах авторы или правообладатели не несут ответственности за претензии, убытки или иной ущерб, возникший в результате использования ПО.
+
+---
+
+**ENGLISH:**
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
 in the Software without restriction, including without limitation the rights
@@ -9,8 +24,10 @@ to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 copies of the Software, and to permit persons to whom the Software is
 furnished to do so, subject to the following conditions:
 
-The above copyright notice and this permission notice shall be included in all
+1. The above copyright notice and this permission notice shall be included in all
 copies or substantial portions of the Software.
+2. When using the plugins in game server panels or hosting platforms, clear credit must be given: "Plugin by Robin Play" or equivalent wording.
+3. Removing or altering author attribution in the source code or accompanying materials is prohibited.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
