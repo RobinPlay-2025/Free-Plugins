@@ -1,3 +1,5 @@
+[![Robin Play Plugins](https://i.ibb.co/p6dcBQw2/Git-Hub-Robin-Play.png)](https://github.com/RobinPlay-2025/Free-Plugins)
+
 <!-- Dynamic badges -->
 <p align="center">
   <a href="https://github.com/RobinPlay-2025/Free-Plugins">
