@@ -1,8 +1,27 @@
-<!-- Banner -->
+<!-- Dynamic badges -->
 <p align="center">
-  <img src="https://img.shields.io/badge/Rust-Plugins-orange?style=for-the-badge&logo=rust" alt="Rust Plugins">
-  <img src="https://img.shields.io/badge/Oxide-Supported-blue?style=for-the-badge" alt="Oxide Support">
-  <img src="https://img.shields.io/badge/Carbon-Supported-green?style=for-the-badge" alt="Carbon Support">
+  <a href="https://github.com/RobinPlay-2025/Free-Plugins">
+    <img src="https://img.shields.io/badge/Rust-Plugins-orange?style=for-the-badge&logo=rust" alt="Rust Plugins">
+  </a>
+  <a href="https://github.com/RobinPlay-2025/Free-Plugins">
+    <img src="https://img.shields.io/badge/Oxide-Supported-blue?style=for-the-badge" alt="Oxide Support">
+  </a>
+  <a href="https://github.com/RobinPlay-2025/Free-Plugins">
+    <img src="https://img.shields.io/badge/Carbon-Supported-brightgreen?style=for-the-badge" alt="Carbon Support">
+  </a>
+</p>
+
+<!-- Stats badges -->
+<p align="center">
+  <a href="https://github.com/RobinPlay-2025/Free-Plugins/stargazers">
+    <img src="https://img.shields.io/github/stars/RobinPlay-2025/Free-Plugins?style=for-the-badge" alt="Stars">
+  </a>
+  <a href="https://github.com/RobinPlay-2025/Free-Plugins/network/members">
+    <img src="https://img.shields.io/github/forks/RobinPlay-2025/Free-Plugins?style=for-the-badge" alt="Forks">
+  </a>
+  <a href="https://github.com/RobinPlay-2025/Free-Plugins/releases">
+    <img src="https://img.shields.io/github/downloads/RobinPlay-2025/Free-Plugins/total?style=for-the-badge" alt="Downloads">
+  </a>
 </p>
 
 <h1 align="center">🎯 Free Plugins for Rust (Oxide & Carbon)</h1>
@@ -59,12 +78,6 @@
 - License: [MIT (adapted)](https://github.com/RobinPlay-2025/Free-Plugins/blob/main/LICENSE)
 
 ---
-
-<p align="center">
-  <img src="https://img.shields.io/github/stars/RobinPlay-2025/Free-Plugins?style=for-the-badge" alt="Stars">
-  <img src="https://img.shields.io/github/forks/RobinPlay-2025/Free-Plugins?style=for-the-badge" alt="Forks">
-  <img src="https://img.shields.io/github/downloads/RobinPlay-2025/Free-Plugins/total?style=for-the-badge" alt="Downloads">
-</p>
 
 <p align="center">
   💡 Если вам понравились плагины — поставьте ⭐ на репозиторий!
