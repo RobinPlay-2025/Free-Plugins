@@ -1,4 +1,5 @@
 //v1.4.4 Фикс после обновления август 2025
+//v1.4.5 Фикс конфигурации
 
 using System;
 using System.Collections.Generic;
@@ -9,7 +10,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("RWorkbench", "Robin Play", "1.4.4")]
+    [Info("RWorkbench", "Robin Play", "1.4.5")]
     [Description("Расширяет радиус действия верстака на все здание")]
     public class RWorkbench : RustPlugin
     {
@@ -779,7 +780,7 @@ namespace Oxide.Plugins
         #region Classes
         private sealed class PluginConfig
         {
-            [JsonProperty(PropertyName = "Отображать уведомление о создании верстака")]
+            [JsonProperty(PropertyName = "Отображать уведомление при установке верстака")]
             public bool BuiltNotification = true;
 
             [JsonProperty(PropertyName = "Частота проверки нахождения внутри здания (секунды)")]
