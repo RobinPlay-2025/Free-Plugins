@@ -1,9 +1,9 @@
-<h1 align="center" style="font-size: 36px; font-weight: bold; padding: 20px; border: 3px solid #00C853; border-radius: 12px; background: linear-gradient(90deg, #00C853, #B2FF59); color: #fff; text-shadow: 1px 1px 3px rgba(0,0,0,0.4);">
-🎯 Robin Play Plugins 🎯
-</h1>
+<p align="center">
+  <h1>🎯 Robin Play Plugins 🎯</h1>
+</p>
 
-<p align="center" style="font-size: 18px;">
-    Бесплатные плагины для <b>Rust</b> с поддержкой и обновлениями
+<p align="center">
+  Бесплатные плагины для <b>Rust</b> с поддержкой и обновлениями
 </p>
 
 ---
