@@ -79,6 +79,3 @@ oxide.grant user <steamid> rworkbench.use
 - en: «Your workbench range has been increased to work inside your building»
 
 
-
-----------------------------------------------------
-История обновлений
