@@ -14,11 +14,7 @@
   - Бочки DLC:
     1. storage_barrel_b.prefab — **Классическая бочка B**
     2. storage_barrel_c.prefab — **Классическая бочка C**
-    3. 
-
-bamboo_barrel.prefab — **Бамбуковая бочка
-
-**
+    3. bamboo_barrel.prefab — **Бамбуковая бочка**
     4. wicker_barrel.prefab — **Плетёная бочка**
     5. abyss_barrel_horizontal — **Бочка Бездны (горизонтальная)**
     6. abyss_barrel_vertical — **Бочка Бездны (вертикальная)**
@@ -57,4 +53,5 @@ bamboo_barrel.prefab — **Бамбуковая бочка
 - После удаления плагина уже поставленные замки не удаляются автоматически.
 
 ![image](images/img_20250813_141858.png)
+
 
