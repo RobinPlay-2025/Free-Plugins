@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("RExtendedLocking", "Robin Play", "1.0.8")]
+    [Info("RExtendedLocking", "Robin Play", "1.0.9")]
     [Description("Установка замков на бочки из DLS, компостер и деревянные ставни")]
     public class RExtendedLocking : RustPlugin
     {
@@ -24,6 +24,10 @@ namespace Oxide.Plugins
             "assets/prefabs/misc/decor_dlc/storagebarrel/storage_barrel_c.prefab",
             "assets/prefabs/deployable/large wood storage/skins/jungle_dlc_large_wood_box/jungle_dlc_storage_vertical/bamboo_barrel.prefab",
             "assets/prefabs/deployable/large wood storage/skins/jungle_dlc_large_wood_box/jungle_dlc_storage_horizontal/wicker_barrel.prefab",
+            "assets/prefabs/deployable/large wood storage/skins/abyss_dlc_large_wood_box/abyss_dlc_storage_horizontal/abyss_barrel_horizontal.prefab",
+            "assets/prefabs/deployable/large wood storage/skins/abyss_dlc_large_wood_box/abyss_dlc_storage_vertical/abyss_barrel_vertical.prefab",
+            "assets/prefabs/deployable/large wood storage/skins/warhammer_dlc_large_wood_box/krieg_storage_horizontal/krieg_storage_horizontal.prefab",
+            "assets/prefabs/deployable/large wood storage/skins/warhammer_dlc_large_wood_box/krieg_storage_vertical/krieg_storage_vertical.prefab",
         };
 
         private const string ComposterPrefab =
