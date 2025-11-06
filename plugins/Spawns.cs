@@ -1,4 +1,5 @@
 //v2.0.38  Добавлена авто установка точек спавна при установке Tesla Coil
+//v2.0.39  Добавлено автоудаление данных при вайпе + добавлена настрйока в кофниг для управления автоудалением
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -12,13 +13,46 @@ using UnityEngine;
 namespace Oxide.Plugins
 {
     [
-        Info("Spawns", "Reneb / k1lly0u / Robin Play", "2.0.38"),
+        Info("Spawns", "Reneb / k1lly0u / Robin Play", "2.0.39"),
         Description(
             "A database of sets of spawn points, created by a user and used by other plugins"
         )
     ]
     class Spawns : RustPlugin
     {
+        #region Configuration
+
+        private ConfigData configData;
+
+        private class ConfigData
+        {
+            [JsonProperty("Удалять данные при вайпе карты")]
+            public bool ClearDataOnWipe { get; set; } = true;
+        }
+
+        protected override void LoadDefaultConfig()
+        {
+            configData = new ConfigData();
+        }
+
+        protected override void LoadConfig()
+        {
+            base.LoadConfig();
+            configData = Config.ReadObject<ConfigData>();
+            if (configData == null)
+            {
+                LoadDefaultConfig();
+            }
+            SaveConfig();
+        }
+
+        protected override void SaveConfig()
+        {
+            Config.WriteObject(configData, true);
+        }
+
+        #endregion
+
         #region Fields
         private SpawnsData _spawnsData;
 
@@ -32,7 +66,11 @@ namespace Oxide.Plugins
         #endregion
 
         #region Oxide Hooks
-        private void Loaded() => LoadData();
+        private void Loaded()
+        {
+            LoadConfig();
+            LoadData();
+        }
 
         private void OnServerInitialized() => VerifyFilesExist();
 
@@ -590,11 +628,44 @@ namespace Oxide.Plugins
         {
             try
             {
+                // CHANGE: Проверка настройки перед удалением данных при вайпе
+                // WHY: Пользователь должен иметь возможность контролировать, удалять ли данные при вайпе
+                // QUOTE(TЗ): "сделай настройку в конфиге Удалять данные при вайпе карты? true/false чтобы можно было самому контролировать надо удалять или нет. вдруг карта меняться не будет, так чтобы спавны остались"
+                // REF: Запрос пользователя
+                if (configData?.ClearDataOnWipe == true)
+                {
+                    // CHANGE: Удаление всех файлов из папки SpawnsDatabase при вайпе
+                    string[] allFiles = Interface.Oxide.DataFileSystem.GetFiles("SpawnsDatabase");
+                    foreach (string filePath in allFiles)
+                    {
+                        try
+                        {
+                            // Убираем расширение .json, если оно есть, так как DeleteDataFile использует путь без расширения
+                            string pathToDelete = filePath;
+                            if (pathToDelete.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+                            {
+                                pathToDelete = pathToDelete.Substring(0, pathToDelete.Length - 5);
+                            }
+                            Interface.Oxide.DataFileSystem.DeleteDataFile(pathToDelete);
+                        }
+                        catch (Exception ex)
+                        {
+                            PrintError($"Ошибка при удалении файла {filePath}: {ex.Message}");
+                        }
+                    }
+
+                    Puts("Обнаружена новая карта (или вайп) - данные успешно удалены");
+                }
+                else
+                {
+                    Puts("Обнаружена новая карта (или вайп) - удаление данных отключено в конфиге");
+                }
+
                 Interface.Oxide.DataFileSystem.WriteObject(
                     "SpawnsDatabase/spawns_data",
                     new SpawnsData()
                 );
-                Puts("Обнаружена новая карта (или вайп) - данные успешно удалены");
+
                 _spawnsData.Spawnfiles.Clear();
                 _loadedSpawnfiles.Clear();
                 _spawnFileCreators.Clear();
