@@ -1,3 +1,4 @@
+//1.0.1 Добавлена блокировка одевания одежды
 using System.Collections.Generic;
 using Newtonsoft.Json;
 using Oxide.Core;
@@ -5,7 +6,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("RItemCompliance", "RobinPlay", "1.0.0")]
+    [Info("RItemCompliance", "RobinPlay", "1.0.1")]
     [Description("Система соответствия предметов требованиям")]
     public partial class RItemCompliance : RustPlugin
     {
@@ -68,6 +69,7 @@ namespace Oxide.Plugins
         #region Data
 
         private Dictionary<ulong, Timer> activeKillTimers = new Dictionary<ulong, Timer>();
+        private Dictionary<ulong, Timer> activeClothingTimers = new Dictionary<ulong, Timer>();
 
         #endregion
 
@@ -139,11 +141,42 @@ namespace Oxide.Plugins
             }
         }
 
+        void OnItemAddedToContainer(ItemContainer container, Item item)
+        {
+            if (container == null || item == null)
+                return;
+
+            var player = container.playerOwner;
+            if (player == null)
+                return;
+
+            if (container == player.inventory.containerWear)
+            {
+                CheckWornClothing(player);
+            }
+        }
+
+        void OnItemRemovedFromContainer(ItemContainer container, Item item)
+        {
+            if (container == null || item == null)
+                return;
+
+            var player = container.playerOwner;
+            if (player == null)
+                return;
+
+            if (container == player.inventory.containerWear)
+            {
+                CheckWornClothing(player);
+            }
+        }
+
         void OnPlayerDisconnected(BasePlayer player)
         {
             if (player != null)
             {
                 StopKillTimer(player);
+                StopClothingTimer(player);
             }
         }
 
@@ -152,7 +185,43 @@ namespace Oxide.Plugins
             if (player != null)
             {
                 StopKillTimer(player);
+                StopClothingTimer(player);
             }
+        }
+
+        void OnPlayerSleepEnded(BasePlayer player)
+        {
+            if (player != null)
+            {
+                CheckWornClothing(player);
+            }
+        }
+
+        void OnPlayerConnected(BasePlayer player)
+        {
+            if (player != null)
+            {
+                timer.Once(1f, () => CheckWornClothing(player));
+            }
+        }
+
+        object CanWearItem(PlayerInventory inventory, Item item)
+        {
+            if (inventory == null || item == null)
+                return null;
+
+            var player = inventory.GetComponent<BasePlayer>();
+            if (player == null)
+                return null;
+
+            if (IsBlockedSkin(item.info.shortname, item.skin))
+            {
+                ShowGameTip(player, Lang("RestrictedItem", player.UserIDString));
+                PlaySirenSound(player);
+                return false;
+            }
+
+            return null;
         }
 
         object CanDeployItem(BasePlayer player, Deployer deployer, NetworkableId entityId)
@@ -290,6 +359,91 @@ namespace Oxide.Plugins
             {
                 timer?.Destroy();
                 activeKillTimers.Remove(player.userID);
+            }
+        }
+
+        private void CheckWornClothing(BasePlayer player)
+        {
+            if (player == null || !player.IsConnected || player.IsDead())
+            {
+                StopClothingTimer(player);
+                return;
+            }
+
+            bool hasBlockedClothing = false;
+
+            foreach (var item in player.inventory.containerWear.itemList)
+            {
+                if (item != null && IsBlockedSkin(item.info.shortname, item.skin))
+                {
+                    hasBlockedClothing = true;
+                    break;
+                }
+            }
+
+            if (hasBlockedClothing)
+            {
+                StartClothingTimer(player);
+            }
+            else
+            {
+                StopClothingTimer(player);
+            }
+        }
+
+        private void StartClothingTimer(BasePlayer player)
+        {
+            if (player == null || !player.IsConnected || player.IsDead())
+                return;
+
+            if (activeClothingTimers.ContainsKey(player.userID))
+                return;
+
+            ShowGameTip(player, Lang("RestrictedItem", player.UserIDString));
+            PlaySirenSound(player);
+
+            activeClothingTimers[player.userID] = timer.Every(
+                configData.DamageInterval,
+                () =>
+                {
+                    if (player == null || !player.IsConnected || player.IsDead())
+                    {
+                        StopClothingTimer(player);
+                        return;
+                    }
+
+                    bool hasBlockedClothing = false;
+                    foreach (var item in player.inventory.containerWear.itemList)
+                    {
+                        if (item != null && IsBlockedSkin(item.info.shortname, item.skin))
+                        {
+                            hasBlockedClothing = true;
+                            break;
+                        }
+                    }
+
+                    if (!hasBlockedClothing)
+                    {
+                        StopClothingTimer(player);
+                        return;
+                    }
+
+                    player.Hurt(configData.DamageAmount, Rust.DamageType.Generic, null, false);
+                    ShowGameTip(player, Lang("RestrictedItem", player.UserIDString));
+                    PlaySirenSound(player);
+                }
+            );
+        }
+
+        private void StopClothingTimer(BasePlayer player)
+        {
+            if (player == null)
+                return;
+
+            if (activeClothingTimers.TryGetValue(player.userID, out var timer))
+            {
+                timer?.Destroy();
+                activeClothingTimers.Remove(player.userID);
             }
         }
 
