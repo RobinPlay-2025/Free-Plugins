@@ -1,4 +1,5 @@
 //1.0.1 Добавлена блокировка одевания одежды
+//1.0.2 Добавлена локализация для сообщения об отсутствии скина, добавлена проверка изменения скина ентити через баллончик с разрушением ентити и нанесением урона игроку (20 единиц)
 using System.Collections.Generic;
 using Newtonsoft.Json;
 using Oxide.Core;
@@ -6,7 +7,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("RItemCompliance", "RobinPlay", "1.0.1")]
+    [Info("RItemCompliance", "RobinPlay", "1.0.2")]
     [Description("Система соответствия предметов требованиям")]
     public partial class RItemCompliance : RustPlugin
     {
@@ -101,6 +102,7 @@ namespace Oxide.Plugins
                     ["ItemBlocked"] = "Item blocked: {0} (Skin: {1})",
                     ["SkinRemoved"] = "Skin removed from item: {0}",
                     ["NotLookingAtItem"] = "You are not looking at a valid item.",
+                    ["NoSkin"] = "This item has no skin.",
                 },
                 this
             );
@@ -113,6 +115,7 @@ namespace Oxide.Plugins
                     ["ItemBlocked"] = "Предмет заблокирован: {0} (Скин: {1})",
                     ["SkinRemoved"] = "Скин удалён с предмета: {0}",
                     ["NotLookingAtItem"] = "Вы не смотрите на предмет.",
+                    ["NoSkin"] = "Этот предмет не имеет скина.",
                 },
                 this,
                 "ru"
@@ -294,6 +297,38 @@ namespace Oxide.Plugins
                 ShowGameTip(player, Lang("RestrictedItem", player.UserIDString));
                 PlaySirenSound(player);
             }
+        }
+
+        void OnEntityReskinned(BaseEntity entity, ItemSkinDirectory.Skin skin, BasePlayer player)
+        {
+            if (entity == null || player == null)
+                return;
+
+            timer.Once(
+                0.3f,
+                () =>
+                {
+                    if (entity == null || entity.IsDestroyed)
+                        return;
+
+                    string prefabName = entity.ShortPrefabName ?? entity.PrefabName ?? "";
+                    ItemDefinition itemDef = ItemManager.FindItemDefinition(prefabName);
+                    if (itemDef == null)
+                        return;
+
+                    ulong skinId = entity.skinID;
+                    if (IsBlockedSkin(itemDef.shortname, skinId))
+                    {
+                        entity.Kill();
+                        if (player != null && player.IsConnected)
+                        {
+                            player.Hurt(20f, Rust.DamageType.Generic, null, false);
+                            ShowGameTip(player, Lang("RestrictedItem", player.UserIDString));
+                            PlaySirenSound(player);
+                        }
+                    }
+                }
+            );
         }
 
         #endregion
@@ -492,8 +527,14 @@ namespace Oxide.Plugins
             BaseEntity targetEntity = null;
 
             var activeItem = player.GetActiveItem();
-            if (activeItem != null && activeItem.skin != 0)
+            if (activeItem != null)
             {
+                if (activeItem.skin == 0)
+                {
+                    Print(player, Lang("NoSkin", player.UserIDString));
+                    return;
+                }
+
                 targetItem = activeItem;
                 shortname = activeItem.info.shortname;
                 skin = activeItem.skin;
@@ -503,6 +544,12 @@ namespace Oxide.Plugins
                 targetItem = GetTargetItem(player);
                 if (targetItem != null)
                 {
+                    if (targetItem.skin == 0)
+                    {
+                        Print(player, Lang("NoSkin", player.UserIDString));
+                        return;
+                    }
+
                     shortname = targetItem.info.shortname;
                     skin = targetItem.skin;
                 }
@@ -514,7 +561,7 @@ namespace Oxide.Plugins
                         skin = targetEntity.skinID;
                         if (skin == 0)
                         {
-                            Print(player, "Этот предмет не имеет скина.");
+                            Print(player, Lang("NoSkin", player.UserIDString));
                             return;
                         }
 
@@ -540,7 +587,7 @@ namespace Oxide.Plugins
 
             if (skin == 0)
             {
-                Print(player, "Этот предмет не имеет скина.");
+                Print(player, Lang("NoSkin", player.UserIDString));
                 return;
             }
 
