@@ -4,8 +4,8 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("RExtendedLocking", "Robin Play", "1.0.9")]
-    [Description("Установка замков на бочки из DLS, компостер и деревянные ставни")]
+    [Info("RExtendedLocking", "Robin Play", "1.0.10")]
+    [Description("Установка замков на бочки из DLS, компостер, улей и деревянные ставни")]
     public class RExtendedLocking : RustPlugin
     {
         #region Prefabs
@@ -14,6 +14,7 @@ namespace Oxide.Plugins
         /// </summary>
         private readonly HashSet<uint> SupportedBarrelsIDs = new HashSet<uint>();
         private uint _composterID;
+        private uint _beehiveID;
 
         /// <summary>
         /// Полные пути префабов
@@ -32,6 +33,9 @@ namespace Oxide.Plugins
 
         private const string ComposterPrefab =
             "assets/prefabs/deployable/composter/composter.prefab";
+
+        private const string BeehivePrefab =
+            "assets/prefabs/deployable/beehive/beehive.deployed.prefab";
         #endregion Prefabs
 
         /// <summary>
@@ -58,6 +62,9 @@ namespace Oxide.Plugins
 
             // Получаем ID компостера
             _composterID = StringPool.Get(ComposterPrefab);
+
+            // Получаем ID улья
+            _beehiveID = StringPool.Get(BeehivePrefab);
 
             // Получаем ID для всех бочек
             foreach (var barrelPrefab in BarrelPrefabs)
@@ -100,6 +107,14 @@ namespace Oxide.Plugins
                 return;
             }
 
+            // Улей
+            if (entity is Beehive beehive && prefabID == _beehiveID && !beehive.isLockable)
+            {
+                beehive.isLockable = true;
+                beehive.SendNetworkUpdate();
+                return;
+            }
+
             // Деревянные ставни
             if (
                 entity is Door door
@@ -121,6 +136,15 @@ namespace Oxide.Plugins
                 if (parent is Composter parentComposter && parentComposter.prefabID == _composterID)
                 {
                     baseLock.transform.localPosition = new Vector3(0f, 1.3f, 0.6f);
+                    baseLock.transform.localRotation = Quaternion.Euler(0, 90, 0);
+                    baseLock.SendNetworkUpdate();
+                    return;
+                }
+
+                // Для улья
+                if (parent is Beehive parentBeehive && parentBeehive.prefabID == _beehiveID)
+                {
+                    baseLock.transform.localPosition = new Vector3(0f, 0.6f, 0.2f);
                     baseLock.transform.localRotation = Quaternion.Euler(0, 90, 0);
                     baseLock.SendNetworkUpdate();
                     return;
@@ -166,6 +190,14 @@ namespace Oxide.Plugins
                 {
                     composter.isLockable = true;
                     composter.SendNetworkUpdate();
+                    continue;
+                }
+
+                // Ульи
+                if (entity is Beehive beehive && prefabID == _beehiveID && !beehive.isLockable)
+                {
+                    beehive.isLockable = true;
+                    beehive.SendNetworkUpdate();
                     continue;
                 }
 
