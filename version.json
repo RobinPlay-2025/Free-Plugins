@@ -1,5 +1,5 @@
 {
-  "version": "2.2.1",
-  "download_url": "https://cdn.boosty.to/file/18efcaa9-7529-4fd2-9a69-e9008774af8c?user_id=36585391&content_id=11745762&expire_time=1784757794&sign=828088d2870121e6157e2ac752a8c5ee68f2d092e78525346797203146477f2a",
-  "changelog": "Добавлено авто-обновление приложения в 1 клик и исправление ошибок WinDivert (Билайн)."
+  "version": "2.2.1a",
+  "download_url": "https://cdn.boosty.to/file/3a4b18ce-b3c7-4a1f-a258-2ce05dc1c419?user_id=36585391&content_id=11745838&expire_time=1784758366&sign=986079adcfb1b23d96fc3196c702c4e6b9dfa49eb2eb00a5fb7fe9d9a69c3613",
+  "changelog": "Тест авто-обновления приложения v2.2.1a"
 }
