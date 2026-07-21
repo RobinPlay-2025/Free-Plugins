@@ -1,5 +1,5 @@
 {
-  "version": "2.2.2",
-  "download_url": "https://cdn.boosty.to/file/12875aac-05c6-46a8-bdd4-11f551282ee9?user_id=36585391&content_id=11745935&expire_time=1784760988&sign=7102ac391f6d768a3c252c094043825657e025924478e40d894f5d47aaa5e5d5",
-  "changelog": "Обновление дизайна: стилизован темный скроллбар лога и улучшена стабильность."
+  "version": "2.3.2",
+  "download_url": "https://cdn.boosty.to/file/723e7dbe-b1b0-4c0a-876d-3d4b620945a9?user_id=36585391&content_id=11745935&expire_time=1784761433&sign=782ac373f6c315ead705da6bb6569fc8c3d653d26cc637ccd14d6fe426c5e082",
+  "changelog": "Обновление дизайна: стилизован темный скроллбар лога и улучшена стабильность. Тест"
 }
