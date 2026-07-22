@@ -1,5 +1,5 @@
 {
-  "version": "2.2.2",
-  "download_url": "https://cdn.boosty.to/file/e09b3627-e1fd-4ddf-8897-0b69241c775e?user_id=36585391&content_id=11745935&expire_time=1784761757&sign=412b607cf55eb72f3c1f226c12ada33b978324c9195059a7d2d7d8aef90c15e5",
-  "changelog": "Обновление дизайна: стилизован темный скроллбар лога и улучшена стабильность."
+  "version": "2.3.2",
+  "download_url": "https://cdn.boosty.to/file/144d7fda-26df-436d-b836-6c7eb6c30e02?user_id=36585391&content_id=11748663&expire_time=1784806363&sign=45e8e18cf2f1a3943fd4f47498fabbdf2e3e75b6ebb1c2982f6a291691349345",
+  "changelog": "Исправлена работа WinDivert (Билайн, Tele2) и улучшена система авто-обновления."
 }
