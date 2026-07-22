@@ -1,5 +1,5 @@
 {
   "version": "2.3.2",
-  "download_url": "https://cdn.boosty.to/file/144d7fda-26df-436d-b836-6c7eb6c30e02?user_id=36585391&content_id=11748663&expire_time=1784806363&sign=45e8e18cf2f1a3943fd4f47498fabbdf2e3e75b6ebb1c2982f6a291691349345",
+  "download_url": "https://cdn.boosty.to/file/144d7fda-26df-436d-b836-6c7eb6c30e02?user_id=36585391&content_id=11748663&expire_time=1784806442&sign=ea65ce5ea8d17fc2cd3a8131e6ac69363be11b6964da21be98fa1f828655a884",
   "changelog": "Исправлена работа WinDivert (Билайн, Tele2) и улучшена система авто-обновления."
 }
