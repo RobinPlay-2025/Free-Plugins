@@ -5,9 +5,10 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("RSleepingSnake", "Robin Play", "1.0.0")]
+    [Info("RSleepingSnake", "RustInnovate", "1.0.1")]
     [Description("Спавн змеи при сборе ресурсов в умеренных биомах")]
-    public partial class RSleepingSnake : RustPlugin
+    // CHANGE: Убран модификатор partial в соответствии с регламентом монолитных плагинов
+    public class RSleepingSnake : RustPlugin
     {
         private ConfigData configData;
 
@@ -34,26 +35,27 @@ namespace Oxide.Plugins
         {
             Puts($"Загрузка плагина RSleepingSnake v{Version}");
             Puts("==================================================");
-            Puts("          Plugin by Robin Play                ");
+            Puts("          Plugin by RustInnovate              ");
             Puts("--------------------------------------------------");
-            Puts("  VK: vk.com/robinplay2025                    ");
-            Puts("  Discord: robin_play                         ");
+            Puts("  VK: vk.ru/rustinnovate                  ");
+            Puts("  Discord: discord.gg/RFm5wruE86                         ");
             Puts("  Telegram: t.me/RobinPlay                    ");
             Puts("==================================================");
-
-            LoadConfig();
+            // CHANGE: Удален избыточный вызов LoadConfig(), так как Oxide вызывает LoadConfig до вызова Init()
         }
 
-        private void LoadConfig()
+        // CHANGE: Добавлен обязательный вызов base.LoadConfig() для инициализации свойства Config в Oxide/Carbon
+        protected override void LoadConfig()
         {
+            base.LoadConfig();
             try
             {
                 configData = Config.ReadObject<ConfigData>();
                 if (configData == null)
                 {
-                    throw new System.Exception("Config is null");
+                    LoadDefaultConfig();
                 }
-                if (configData.TriggeringPrefabs != null)
+                else if (configData.TriggeringPrefabs != null)
                 {
                     var uniquePrefabs = new List<string>();
                     foreach (var prefab in configData.TriggeringPrefabs)
@@ -76,12 +78,17 @@ namespace Oxide.Plugins
 
         protected override void LoadDefaultConfig()
         {
+            // CHANGE: Инициализация нового экземпляра конфигурации по умолчанию
             configData = new ConfigData();
         }
 
         protected override void SaveConfig()
         {
-            Config.WriteObject(configData);
+            // CHANGE: Защитная проверка Config на null и сохранение с форматированием
+            if (Config != null)
+            {
+                Config.WriteObject(configData, true);
+            }
         }
 
         private void OnCollectiblePickup(CollectibleEntity collectible, BasePlayer player, bool eat)
