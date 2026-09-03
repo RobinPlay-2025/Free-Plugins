@@ -34,3 +34,11 @@ RSurvivalStore
 [Подробнее](./plugins/RSurvivalStore_v2.9.6.md) | [Скачать](./plugins/RSurvivalStore_v2.9.6.rar)
 
 ---
+### RSleepingSnake
+**Версия:** 1.0.1 | **Автор:** RustInnovate | **Категория:** Бесплатные плагины
+
+🐍 RSleepingSnake
+
+[Подробнее](./plugins/RSleepingSnake.md) | [Скачать](./plugins/RSleepingSnake.cs)
+
+---
