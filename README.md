@@ -42,3 +42,11 @@ RSurvivalStore
 [Подробнее](./plugins/RSleepingSnake.md) | [Скачать](./plugins/RSleepingSnake.cs)
 
 ---
+### RAdminMenu
+**Версия:** 2.0.0 | **Автор:** RustInnovate | **Категория:** Бесплатные плагины
+
+🛠️ ## RAdminMenu — всё администрирование сервера Rust в одном меню
+
+[Подробнее](./plugins/RAdminMenu.md) | [Скачать](./plugins/RAdminMenu.cs)
+
+---
