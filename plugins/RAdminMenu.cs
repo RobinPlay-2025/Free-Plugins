@@ -17,7 +17,7 @@ using UnityEngine.UI;
 
 namespace Oxide.Plugins
 {
-    [Info("RAdminMenu", "RustInnovate", "2.0.0")]
+    [Info("RAdminMenu", "RustInnovate", "2.0.1")]
     [Description("Современное модульное меню администратора")]
     public class RAdminMenu : RustPlugin
     {
@@ -99,6 +99,11 @@ namespace Oxide.Plugins
 
         // CHANGE: Хранилище идентификаторов игроков с активным креативным режимом
         private readonly HashSet<ulong> _creativePlayers = new HashSet<ulong>();
+
+        // CHANGE: Снапшот нативных конвар Creative.* на момент включения креатива — для возврата исходных значений
+        private bool _creativeConvarsSnapshotTaken;
+        private readonly Dictionary<string, bool> _creativeConvarsSnapshot =
+            new Dictionary<string, bool>();
         private readonly Dictionary<ulong, SteamInfo> _cachedSteamInfo =
             new Dictionary<ulong, SteamInfo>();
 
@@ -156,6 +161,30 @@ namespace Oxide.Plugins
             // CHANGE: Индекс цвета по умолчанию для построек из контейнеров в креатив-режиме (0 - стандартный)
             [JsonProperty("Цвет контейнеров по умолчанию при постройке (0-15)")]
             public uint DefaultContainerColor = 0;
+        }
+
+        // CHANGE: Нативные конвары Creative.* вынесены в конфиг. Игра гейтит каждую креатив-возможность парой
+        // (флаг игрока CreativeMode + серверный конвар), поэтому без включения конваров флаг сам по себе ничего не даёт.
+        public class CreativeSettings
+        {
+            [JsonProperty("Бесплатная постройка и улучшение (creative.freebuild)")]
+            public bool FreeBuild = true;
+
+            [JsonProperty("Бесплатный ремонт (creative.freerepair)")]
+            public bool FreeRepair = true;
+
+            [JsonProperty("Игнорирование проверок размещения (creative.freeplacement)")]
+            public bool FreePlacement = true;
+
+            [JsonProperty("Пропуск задержки удержания при установке (creative.bypassholdtoplaceduration)")]
+            public bool BypassHoldToPlaceDuration = true;
+
+            [JsonProperty("Безлимитные электрические соединения (creative.unlimitedio)")]
+            public bool UnlimitedIo = true;
+
+            // CHANGE: По умолчанию выключено — это failsafe-конвар игры; клиентские команды always-on вдобавок требуют прав администратора
+            [JsonProperty("Разрешить переключение Always-On (creative.alwaysonenabled)")]
+            public bool AlwaysOn = false;
         }
 
         public class NavigationHeaderSettings
@@ -1800,6 +1829,10 @@ namespace Oxide.Plugins
             [JsonProperty("Общие настройки")]
             public GeneralSettings General = new GeneralSettings();
 
+            // CHANGE: Секция креатив-режима — управление нативными конварами Creative.*
+            [JsonProperty("Настройки креатив-режима")]
+            public CreativeSettings Creative = new CreativeSettings();
+
             [JsonProperty("Панель навигации (левая панель)")]
             public NavigationSettings Navigation = new NavigationSettings();
 
@@ -1854,6 +1887,8 @@ namespace Oxide.Plugins
             // CHANGE: Валидация и инициализация всех подсекций для плавной миграции конфига
             if (_config.General == null)
                 _config.General = new GeneralSettings();
+            if (_config.Creative == null)
+                _config.Creative = new CreativeSettings();
             if (_config.Navigation == null)
                 _config.Navigation = new NavigationSettings();
             if (_config.Header == null)
@@ -2709,6 +2744,21 @@ namespace Oxide.Plugins
 
             _sessions.Clear();
             _tpMarkerPlayers.Clear();
+            // CHANGE: Снятие флага CreativeMode и клиентского креатив-UI у всех креатив-игроков до выгрузки —
+            // иначе после перезагрузки плагина игроки остаются с флагом, но уже без отслеживания плагином
+            foreach (ulong creativeId in _creativePlayers.ToList())
+            {
+                BasePlayer creativePlayer = BasePlayer.FindByID(creativeId);
+                if (creativePlayer == null)
+                    continue;
+
+                creativePlayer.SetPlayerFlag(BasePlayer.PlayerFlags.CreativeMode, false);
+                if (creativePlayer.IsConnected)
+                    creativePlayer.Command("debug.setcreative_ui", false);
+                creativePlayer.SendNetworkUpdateImmediate();
+            }
+            // CHANGE: Перед очисткой коллекции возвращаем нативные конвары Creative.* в исходное состояние
+            ApplyCreativeConvars(false);
             _creativePlayers.Clear();
             _cuffedPlayers.Clear();
             _cachedSteamInfo.Clear();
@@ -2726,6 +2776,8 @@ namespace Oxide.Plugins
             _sessions.Remove(player.userID);
             _tpMarkerPlayers.Remove(player.userID);
             _creativePlayers.Remove(player.userID);
+            // CHANGE: Если креатив-игроков не осталось — возвращаем нативные конвары Creative.* в выключенное состояние
+            RestoreCreativeConvarsIfNoneLeft();
             _cuffedPlayers.Remove(player.userID);
         }
 
@@ -9552,6 +9604,9 @@ namespace Oxide.Plugins
         #region Creative Mode Hooks
 
         // CHANGE: Единая точка переключения креатив-режима (используется меню действий на игроке и Быстрым меню админа)
+        // CHANGE: Дополнительно включает/выключает нативные серверные конвары Creative.*: каждая игровая проверка
+        // требует ОДНОВРЕМЕННО флаг игрока и конвар (player.IsInCreativeMode && Creative.freeBuild и т.п.),
+        // поэтому флаг без конвар не активирует большую часть креатив-возможностей.
         private void ToggleCreativeMode(BasePlayer target)
         {
             if (target == null)
@@ -9560,6 +9615,7 @@ namespace Oxide.Plugins
             if (!_creativePlayers.Contains(target.userID))
             {
                 _creativePlayers.Add(target.userID);
+                ApplyCreativeConvars(true);
                 target.SetPlayerFlag(BasePlayer.PlayerFlags.IsDeveloper, false);
                 target.SetPlayerFlag(BasePlayer.PlayerFlags.CreativeMode, true);
                 target.Command("debug.setcreative_ui", true);
@@ -9573,7 +9629,83 @@ namespace Oxide.Plugins
                 target.SetPlayerFlag(BasePlayer.PlayerFlags.CreativeMode, false);
                 target.Command("debug.setcreative_ui", false);
                 target.SendNetworkUpdateImmediate();
+                RestoreCreativeConvarsIfNoneLeft();
             }
+        }
+
+        /// <summary>
+        /// Включает нативные конвары Creative.* согласно конфигурации.
+        /// Инвариант: конвары без флага CreativeMode у игрока ничего не дают (все проверки игры —
+        /// конъюнкция «флаг + конвар»), поэтому глобальное включение безопасно для обычных игроков.
+        /// Инвариант: исходные значения конвар снимаются в снапшот перед первым включением и
+        /// восстанавливаются при выключении — ручные настройки владельца сервера не затираются.
+        /// </summary>
+        /// <param name="enabled">true — включить конвары (со снапшотом исходных значений), false — восстановить снапшот.</param>
+        private void ApplyCreativeConvars(bool enabled)
+        {
+            CreativeSettings cfg = _config.Creative;
+            if (cfg == null)
+                return;
+
+            if (enabled)
+            {
+                if (!_creativeConvarsSnapshotTaken)
+                {
+                    _creativeConvarsSnapshotTaken = true;
+                    _creativeConvarsSnapshot["creative.freebuild"] = ConVar.Creative.freeBuild;
+                    _creativeConvarsSnapshot["creative.freerepair"] = ConVar.Creative.freeRepair;
+                    _creativeConvarsSnapshot["creative.freeplacement"] = ConVar.Creative.freePlacement;
+                    _creativeConvarsSnapshot["creative.bypassholdtoplaceduration"] = ConVar.Creative.bypassHoldToPlaceDuration;
+                    _creativeConvarsSnapshot["creative.unlimitedio"] = ConVar.Creative.unlimitedIo;
+                    _creativeConvarsSnapshot["creative.alwaysonenabled"] = ConVar.Creative.alwaysOnEnabled;
+                }
+
+                SetServerVar("creative.freebuild", cfg.FreeBuild);
+                SetServerVar("creative.freerepair", cfg.FreeRepair);
+                SetServerVar("creative.freeplacement", cfg.FreePlacement);
+                SetServerVar(
+                    "creative.bypassholdtoplaceduration",
+                    cfg.BypassHoldToPlaceDuration
+                );
+                SetServerVar("creative.unlimitedio", cfg.UnlimitedIo);
+                SetServerVar("creative.alwaysonenabled", cfg.AlwaysOn);
+            }
+            else
+            {
+                if (!_creativeConvarsSnapshotTaken)
+                    return;
+
+                foreach (KeyValuePair<string, bool> kv in _creativeConvarsSnapshot)
+                    SetServerVar(kv.Key, kv.Value);
+
+                _creativeConvarsSnapshot.Clear();
+                _creativeConvarsSnapshotTaken = false;
+            }
+        }
+
+        /// <summary>
+        /// Возвращает конвары Creative.* в выключенное состояние, когда активных креатив-игроков не осталось.
+        /// Инвариант: вызывается только после удаления игрока из _creativePlayers.
+        /// </summary>
+        private void RestoreCreativeConvarsIfNoneLeft()
+        {
+            if (_creativePlayers.Count == 0)
+                ApplyCreativeConvars(false);
+        }
+
+        /// <summary>
+        /// Устанавливает серверную консольную переменную через консольную систему игры.
+        /// Предусловие: имя переменной существует на сервере.
+        /// Постусловие: при фактическом изменении значения Command.ValueChanged реплицирует значение
+        /// всем подключённым клиентам (прямое присваивание статического поля ConVar.Creative.* репликацию
+        /// не триггерит, и клиентский креатив-UI остался бы со старым значением до релога).
+        /// Сложность: O(1) по времени и памяти.
+        /// </summary>
+        /// <param name="name">Полное имя переменной, например "creative.freebuild".</param>
+        /// <param name="value">Целевое значение.</param>
+        private void SetServerVar(string name, bool value)
+        {
+            ConsoleSystem.Run(ConsoleSystem.Option.Server, name, value ? "1" : "0");
         }
 
         // CHANGE: Разрешение постройки чертежом без наличия ресурсов в инвентаре для креатив-режима
