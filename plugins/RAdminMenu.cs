@@ -17,7 +17,8 @@ using UnityEngine.UI;
 
 namespace Oxide.Plugins
 {
-    [Info("RAdminMenu", "RustInnovate", "2.0.1")]
+        // CHANGE: Версия повышена до 2.0.2 — фикс сброса скролла при кликах по блоку «Время суток» (точечные обновления вместо RenderContent)
+        [Info("RAdminMenu", "RustInnovate", "2.0.2")]
     [Description("Современное модульное меню администратора")]
     public class RAdminMenu : RustPlugin
     {
@@ -3007,6 +3008,10 @@ namespace Oxide.Plugins
             DestroyMenu(player);
 
             AdminSession session = GetSession(player);
+            // CHANGE: Внутренняя переиспользуемая очистка DestroyMenu сбрасывает флаг открытого меню —
+            // восстанавливаем его, иначе фоновые обновления шапки/времени и отложенный рендер контента
+            // считают меню закрытым
+            session.MenuOpen = true;
             var container = new CuiElementContainer();
 
             // 1. Полноэкранный слой-оверлей
@@ -3040,12 +3045,30 @@ namespace Oxide.Plugins
             int fps = Performance.current.frameRate;
             AddHeaderInfo(container, player, online, max, sleepers, fps);
 
-            // 4. Базовая панель контента и динамическое содержимое
+            // 4. Базовая панель контента (динамическое содержимое отправляется отдельным батчем ниже)
             AddContentBase(container, player);
-            AddContentBody(container, player, session);
+            AddContentBodySkeleton(container);
 
             // 5. Единая отправка всех слоев клиенту
             CuiHelper.AddUi(player, container);
+
+            // CHANGE: Если ScrollView создается в одном батче со всеми предками, клиент позиционирует
+            // его контент до финального layout иерархии — ряды кнопок Быстрого меню при первом открытии
+            // уезжают за маску (симптом лечится переключением категории, т.е. вызовом RenderContent при
+            // уже свёрстанной иерархии предков). Контент вынесен в отдельный батч следующим кадром —
+            // это воспроизводит проверенный путь отрисовки при переключении вкладок.
+            NextFrame(() =>
+            {
+                if (player == null || !player.IsConnected)
+                    return;
+
+                // CHANGE: Повторный рендер выполняется только если меню не закрыли в течение кадра
+                if (
+                    _sessions.TryGetValue(player.userID, out AdminSession openSession)
+                    && openSession.MenuOpen
+                )
+                    RenderContent(player);
+            });
         }
 
         // CHANGE: Добавление базового каркаса панели навигации в контейнер
@@ -3558,12 +3581,9 @@ namespace Oxide.Plugins
             CuiHelper.AddUi(player, container);
         }
 
-        // CHANGE: Добавление динамического тела контента и категории в контейнер
-        private void AddContentBody(
-            CuiElementContainer container,
-            BasePlayer player,
-            AdminSession session
-        )
+        // CHANGE: Добавление прозрачного каркаса тела контента без динамического содержимого —
+        // используется в RenderFullMenu, наполнение выполняется отдельным батчем через RenderContent
+        private void AddContentBodySkeleton(CuiElementContainer container)
         {
             container.Add(
                 new CuiPanel
@@ -3580,6 +3600,16 @@ namespace Oxide.Plugins
                 LayerContent,
                 LayerContentBody
             );
+        }
+
+        // CHANGE: Добавление динамического тела контента и категории в контейнер
+        private void AddContentBody(
+            CuiElementContainer container,
+            BasePlayer player,
+            AdminSession session
+        )
+        {
+            AddContentBodySkeleton(container);
 
             switch (session.CurrentCategory)
             {
@@ -4193,7 +4223,59 @@ namespace Oxide.Plugins
                 "QM_Time_PresetNight"
             );
 
-            // Блок ввода и кнопка применить на позиции третьей колонки
+            // CHANGE: Блок ввода вынесен в AddQuickMenuTimeInput — та же геометрия используется при
+            // точечном обновлении, чтобы клики по кнопкам времени не сбрасывали позицию скролла
+            int inputStartX = AddQuickMenuTimeInput(container, player, session);
+
+            int applyCenterX =
+                inputStartX
+                + timeCfg.Input.Width
+                + timeCfg.ApplyButton.SpacingX
+                + timeCfg.ApplyButton.Width / 2;
+            int applyHalfW = timeCfg.ApplyButton.Width / 2;
+            int applyHalfH = timeCfg.ApplyButton.Height / 2;
+
+            container.Add(
+                new CuiButton
+                {
+                    Button =
+                    {
+                        Command = "radminmenu.qm_time_apply",
+                        Color = timeCfg.ApplyButton.BackgroundColor,
+                    },
+                    RectTransform =
+                    {
+                        AnchorMin = "0.5 0.5",
+                        AnchorMax = "0.5 0.5",
+                        OffsetMin =
+                            $"{applyCenterX - applyHalfW} {timeCfg.Presets.OffsetY - applyHalfH}",
+                        OffsetMax =
+                            $"{applyCenterX + applyHalfW} {timeCfg.Presets.OffsetY + applyHalfH}",
+                    },
+                    Text =
+                    {
+                        Text = Msg("QM_TIME_APPLY", player.UserIDString),
+                        Align = TextAnchor.MiddleCenter,
+                        FontSize = timeCfg.ApplyButton.FontSize,
+                        Font = "robotocondensed-bold.ttf",
+                        Color = timeCfg.ApplyButton.TextColor,
+                    },
+                },
+                cardName,
+                "QM_Time_Apply"
+            );
+        }
+
+        // CHANGE: Блок ввода времени вынесен из RenderQuickMenuTimeCard — единственный источник геометрии
+        // для полной отрисовки и точечного обновления (инвариант: координаты совпадают пиксель в пиксель).
+        // Возвращает inputStartX — левую границу блока ввода, от которой позиционируется кнопка "Применить"
+        private int AddQuickMenuTimeInput(
+            CuiElementContainer container,
+            BasePlayer player,
+            AdminSession session
+        )
+        {
+            var timeCfg = _config.QuickMenu.TimeCard;
             int col2X = timeCfg.Input.OffsetX;
             int totalInputBlockW =
                 timeCfg.Input.Width + timeCfg.ApplyButton.SpacingX + timeCfg.ApplyButton.Width;
@@ -4218,7 +4300,7 @@ namespace Oxide.Plugins
                             $"{inputCenterX + inputHalfW} {timeCfg.Presets.OffsetY + inputHalfH}",
                     },
                 },
-                cardName,
+                "QM_TimePanel",
                 inputPanelLayer
             );
 
@@ -4289,43 +4371,30 @@ namespace Oxide.Plugins
                 );
             }
 
-            int applyCenterX =
-                inputStartX
-                + timeCfg.Input.Width
-                + timeCfg.ApplyButton.SpacingX
-                + timeCfg.ApplyButton.Width / 2;
-            int applyHalfW = timeCfg.ApplyButton.Width / 2;
-            int applyHalfH = timeCfg.ApplyButton.Height / 2;
+            return inputStartX;
+        }
 
-            container.Add(
-                new CuiButton
-                {
-                    Button =
-                    {
-                        Command = "radminmenu.qm_time_apply",
-                        Color = timeCfg.ApplyButton.BackgroundColor,
-                    },
-                    RectTransform =
-                    {
-                        AnchorMin = "0.5 0.5",
-                        AnchorMax = "0.5 0.5",
-                        OffsetMin =
-                            $"{applyCenterX - applyHalfW} {timeCfg.Presets.OffsetY - applyHalfH}",
-                        OffsetMax =
-                            $"{applyCenterX + applyHalfW} {timeCfg.Presets.OffsetY + applyHalfH}",
-                    },
-                    Text =
-                    {
-                        Text = Msg("QM_TIME_APPLY", player.UserIDString),
-                        Align = TextAnchor.MiddleCenter,
-                        FontSize = timeCfg.ApplyButton.FontSize,
-                        Font = "robotocondensed-bold.ttf",
-                        Color = timeCfg.ApplyButton.TextColor,
-                    },
-                },
-                cardName,
-                "QM_Time_Apply"
-            );
+        // CHANGE: Точечное обновление блока ввода времени без пересоздания ScrollView —
+        // клики по кнопкам времени (пресеты, плейсхолдер, "Применить") больше не сбрасывают
+        // позицию скролла списка карточек в начало
+        private void RefreshQuickMenuTimeInput(BasePlayer player)
+        {
+            if (player == null || !player.IsConnected)
+                return;
+
+            // CHANGE: Обновляем только открытое быстрое меню — иначе элемент не найдётся на клиенте
+            if (
+                !_sessions.TryGetValue(player.userID, out AdminSession session)
+                || !session.MenuOpen
+                || session.CurrentCategory != "quickmenu"
+            )
+                return;
+
+            CuiHelper.DestroyUi(player, "QM_Time_Input_Bg");
+
+            var container = new CuiElementContainer();
+            AddQuickMenuTimeInput(container, player, session);
+            CuiHelper.AddUi(player, container);
         }
 
         // CHANGE: Отрисовка карточки управления погодой со всеми кнопками быстрых пресетов и переходом в детальные настройки
@@ -8725,6 +8794,12 @@ namespace Oxide.Plugins
             {
                 RenderModal(player);
             }
+            else if (targetInput == "time_input")
+            {
+                // CHANGE: Фокус поля времени — точечный рендер блока ввода вместо полного контента,
+                // чтобы клик по плейсхолдеру не сбрасывал позицию скролла карточек
+                RefreshQuickMenuTimeInput(player);
+            }
             else
             {
                 RenderContent(player);
@@ -8849,16 +8924,19 @@ namespace Oxide.Plugins
                             : _config.QuickMenu.ActionsCard.CreativeButtonColor
                     );
                     break;
-                // CHANGE: Быстрые пресеты времени с мгновенным обновлением тикера
+                // CHANGE: Пресеты времени — точечное обновление тикера и поля ввода (без RenderContent,
+                // чтобы не пересоздавать ScrollView и не сбрасывать позицию скролла)
                 case "time_day":
                     ConVar.Env.time = 12f;
                     session.TimeInput = "12:00";
                     UpdateQuickMenuTimeOnly(player);
+                    RefreshQuickMenuTimeInput(player);
                     break;
                 case "time_night":
                     ConVar.Env.time = 0f;
                     session.TimeInput = "00:00";
                     UpdateQuickMenuTimeOnly(player);
+                    RefreshQuickMenuTimeInput(player);
                     break;
                 case "heli":
                     var heli = GameManager.server.CreateEntity(
@@ -9015,7 +9093,10 @@ namespace Oxide.Plugins
                 // CHANGE: Чат-уведомление исключено: меню обновляется мгновенно, визуальный результат виден в игре
             }
 
-            RenderContent(player);
+            // CHANGE: Точечное обновление тикера и поля ввода вместо RenderContent — полная перерисовка
+            // контента пересоздавала ScrollView и сбрасывала позицию скролла в начало списка
+            UpdateQuickMenuTimeOnly(player);
+            RefreshQuickMenuTimeInput(player);
         }
 
         // CHANGE: Обработчики команд детального управления погодой (WeatherManager)
