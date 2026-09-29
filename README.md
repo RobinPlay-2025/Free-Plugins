@@ -53,7 +53,7 @@ RSurvivalStore
 ### RRemove
 **Версия:** 1.6.6 | **Автор:** RustInnovate | **Категория:** Бесплатные плагины
 
-🔨 ### RRemove
+🔨 ## RRemove
 
 [Подробнее](./plugins/RRemove.md) | [Скачать](./plugins/RRemove.cs)
 
