@@ -50,3 +50,11 @@ RSurvivalStore
 [Подробнее](./plugins/RAdminMenu.md) | [Скачать](./plugins/RAdminMenu.cs)
 
 ---
+### RRemove
+**Версия:** 1.6.6 | **Автор:** RustInnovate | **Категория:** Бесплатные плагины
+
+🔨 ### RRemove
+
+[Подробнее](./plugins/RRemove.md) | [Скачать](./plugins/RRemove.cs)
+
+---
