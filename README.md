@@ -58,3 +58,12 @@ RSurvivalStore
 [Подробнее](./plugins/RRemove.md) | [Скачать](./plugins/RRemove.cs)
 
 ---
+
+### RIzolenta
+**Версия:** 1.0.0 | **Автор:** RustInnovate | **Категория:** Бесплатные плагины
+
+🩹 RIzolenta
+
+[Подробнее](./plugins/RIzolenta.md) | [Скачать](./plugins/RIzolenta.cs)
+
+---
