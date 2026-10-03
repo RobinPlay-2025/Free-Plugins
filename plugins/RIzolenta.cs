@@ -27,11 +27,11 @@ using UnityEngine;
  *  - OnLootEntity: O(k), k — кол-во добавляемых предметов (<= MaxAmount).
  */
 
-namespace Carbon.Plugins
+namespace Oxide.Plugins
 {
-    [Info("RIzolenta", "RustInnovate", "1.0.0")]
+    [Info("RIzolenta", "RustInnovate", "1.1.0")]
     [Description("Починка оружия, брони и инструментов изолентой (ducttape) без верстака и ресурсов")]
-    public class RIzolenta : CarbonPlugin
+    public class RIzolenta : RustPlugin
     {
         #region Configuration
 
