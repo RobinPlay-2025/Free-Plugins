@@ -29,7 +29,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("RIzolenta", "RustInnovate", "1.1.0")]
+    [Info("RIzolenta", "RustInnovate", "1.1.1")]
     [Description("Починка оружия, брони и инструментов изолентой (ducttape) без верстака и ресурсов")]
     public class RIzolenta : RustPlugin
     {
@@ -183,7 +183,7 @@ namespace Oxide.Plugins
         private object CanMoveItem(Item item, PlayerInventory playerInventory, ItemContainerId targetContainerId, int targetSlot, int amount, ItemMoveModifier modifier)
         {
             if (item == null || playerInventory == null) return null;
-            if (item.info.shortname != TapeShortname || item.skin != config.TapeSkin) return null;
+            if (!IsOurTape(item)) return null;
 
             // CHANGE: резолвим контейнер назначения по ID (игра передаёт ItemContainerId, chunk7:20582)
             var targetContainer = playerInventory.FindContainer(targetContainerId);
@@ -279,6 +279,36 @@ namespace Oxide.Plugins
         }
 
         #endregion
+
+        /// <summary>
+        /// Проверка, что предмет — наша изолента (ducttape со скином из конфига).
+        /// Предусловия: item может быть null.
+        /// Инварианты: совпадение shortname И скина — ванильный ducttape без скина не считается нашей изолентой.
+        /// Сложность: O(1).
+        /// </summary>
+        private bool IsOurTape(Item item)
+            => item != null && item.info.shortname == TapeShortname && item.skin == config.TapeSkin;
+
+        /// <summary>
+        /// Запрещает фактическую переработку нашей изоленты, не ограничивая её укладку.
+        /// Точка вызова игры: Recycler.RecycleThink —
+        /// Interface.CallHook("OnItemRecycleAmount", slot, amount, this)
+        /// (Assembly-CSharp chunk8:1735); если результат — int, он ЗАМЕНЯЕТ количество
+        /// предметов на переработку за цикл. Возврат 0 означает: списывается 0 шт.
+        /// изоленты, не производится scrap/ингредиентов, цикл продолжает обработку
+        /// остальных слотов (в отличие от OnItemRecycle, где non-null даёт break
+        /// всего цикла — chunk8:1718).
+        /// ВАЖНО: хук CanBeRecycled для запрета непригоден — он же используется
+        /// RecyclerItemFilter (chunk8:1611) для приёма предмета в слоты ввода (0-5):
+        /// false выталкивал бы изоленту в слоты вывода.
+        /// Постусловие: 0 только для нашей изоленты, остальные предметы — null (ванильное поведение).
+        /// Сложность: O(1).
+        /// </summary>
+        private object OnItemRecycleAmount(Item item, int amount, Recycler recycler)
+        {
+            if (IsOurTape(item)) return 0;
+            return null;
+        }
 
         /// <summary>
         /// Блокирует изучение изоленты на исследовательском столе.
