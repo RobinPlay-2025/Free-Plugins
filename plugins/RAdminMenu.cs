@@ -17,7 +17,7 @@ using UnityEngine.UI;
 
 namespace Oxide.Plugins
 {
-        [Info("RAdminMenu", "RustInnovate", "2.0.3")]
+        [Info("RAdminMenu", "RustInnovate", "2.0.4")]
     [Description("Современное модульное меню администратора")]
     public class RAdminMenu : RustPlugin
     {
@@ -3437,6 +3437,25 @@ namespace Oxide.Plugins
         /// Выполняет динамическое обновление характеристик игрока в реальном времени (сессия, здоровье, радиация, пинг).
         /// </summary>
         /// <param name="player">Администратор, просматривающий карточку игрока</param>
+        // CHANGE: Безопасное получение пинга — IPlayer.Ping падал с NRE, когда connection == null (NPC/спящий/отключающийся игрок)
+        /// <summary>
+        /// Возвращает пинг игрока без выброса исключений.
+        /// Инвариант: не бросает NRE при null-соединении; возвращает 0, если пинг недоступен.
+        /// Предусловие: targetBasePlayer может быть null (спящий/не найденный игрок).
+        /// Постусловие: результат >= 0.
+        /// Сложность: O(1) time / O(1) mem.
+        /// </summary>
+        private int GetSafePing(BasePlayer targetBasePlayer)
+        {
+            if (targetBasePlayer == null || !targetBasePlayer.IsConnected)
+                return 0;
+
+            // CHANGE: Raknet-классы недоступны плагину по ссылке — пинг берём через Covalence IPlayer.Ping,
+            // который безопасен, т.к. null-connection уже отсеян выше
+            IPlayer connected = covalence.Players.FindPlayerById(targetBasePlayer.UserIDString);
+            return connected?.Ping ?? 0;
+        }
+
         // CHANGE: Точечное обновление характеристик игрока (сессия, здоровье, радиация, пинг) в реальном времени
         // CHANGE: отрисовка переведена на общие CUI-хелперы (сокращение объёма)
         private void UpdateUserInfoRealtime(BasePlayer player)
@@ -3448,11 +3467,13 @@ namespace Oxide.Plugins
             if (session == null || session.CurrentCategory != "userinfo" || session.SelectedUserId == 0)
                 return;
 
-            IPlayer target = covalence.Players.FindPlayerById(session.SelectedUserId.ToString());
-            if (target == null)
+            // CHANGE: Спящие игроки не находятся через covalence — резолвим BasePlayer напрямую
+            BasePlayer targetBasePlayer = BasePlayer.FindAwakeOrSleeping(
+                session.SelectedUserId.ToString()
+            );
+            if (targetBasePlayer == null && covalence.Players.FindPlayerById(session.SelectedUserId.ToString()) == null)
                 return;
 
-            BasePlayer targetBasePlayer = BasePlayer.FindAwakeOrSleeping(target.Id);
             var uiCfg = _config.UserInfo;
 
             CuiHelper.DestroyUi(player, "UI_Info_DetailsLeft");
@@ -3471,8 +3492,9 @@ namespace Oxide.Plugins
             // CHANGE: IP видят только администраторы (authLevel >= 2)
             bool canViewIp = HasAccess(player);
 
-            string ipAddress = targetBasePlayer?.net?.connection?.ipaddress ?? target.Address ?? "N/A";
-            int ping = target.Ping;
+            // CHANGE: target.Address убран — NRE при null-connection; IP только из BasePlayer
+            string ipAddress = targetBasePlayer?.net?.connection?.ipaddress ?? "N/A";
+            int ping = GetSafePing(targetBasePlayer);
 
             string ipPing = canViewIp
                 ? Msg("UI_PING_IP", player.UserIDString, ipAddress, ping)
@@ -3489,7 +3511,10 @@ namespace Oxide.Plugins
             }
             if (Clans != null)
             {
-                string tag = Clans.Call<string>("GetClanOf", target.Id);
+                string tag = Clans.Call<string>(
+                    "GetClanOf",
+                    session.SelectedUserId.ToString()
+                );
                 if (!string.IsNullOrEmpty(tag))
                     detailsRight += Msg("UI_CLAN", player.UserIDString, tag) + "\n";
             }
@@ -5046,9 +5071,9 @@ namespace Oxide.Plugins
             // 1. Фильтры
             var filters = new List<(string key, string langKey)>
             {
+                // CHANGE: Вкладки "Офлайн" и "Спящие" объединены — спящие игроки входят в офлайн-фильтр
                 ("online", "FILTER_ONLINE"),
                 ("offline", "FILTER_OFFLINE"),
-                ("sleeping", "FILTER_SLEEPING"),
                 ("admins", "FILTER_ADMINS"),
                 ("mods", "FILTER_MODS"),
                 ("all", "FILTER_ALL"),
@@ -5172,6 +5197,7 @@ namespace Oxide.Plugins
                     sleepingIds.Add(bp.userID);
             }
 
+            // CHANGE: Вкладки объединены: ветка "sleeping" удалена; legacy-значение маппится в "offline" в Cmd_PlayerFilter
             if (session.PlayerFilter == "online")
             {
                 foreach (BasePlayer active in BasePlayer.activePlayerList)
@@ -5179,18 +5205,6 @@ namespace Oxide.Plugins
                     if (active != null && active.IsConnected)
                     {
                         IPlayer iPlayer = covalence.Players.FindPlayerById(active.UserIDString);
-                        if (iPlayer != null)
-                            queryList.Add(iPlayer);
-                    }
-                }
-            }
-            else if (session.PlayerFilter == "sleeping")
-            {
-                foreach (BasePlayer sleeper in BasePlayer.sleepingPlayerList)
-                {
-                    if (sleeper != null)
-                    {
-                        IPlayer iPlayer = covalence.Players.FindPlayerById(sleeper.UserIDString);
                         if (iPlayer != null)
                             queryList.Add(iPlayer);
                     }
@@ -5226,12 +5240,13 @@ namespace Oxide.Plugins
                     }
                 }
 
+                // CHANGE: "Офлайн" теперь включает и спящих игроков (любой, кто не подключён)
                 if (session.PlayerFilter == "offline")
                 {
                     queryList = queryList.Where(p =>
                     {
                         if (ulong.TryParse(p.Id, out ulong uid))
-                            return !onlineIds.Contains(uid) && !sleepingIds.Contains(uid);
+                            return !onlineIds.Contains(uid);
                         return !p.IsConnected;
                     }).ToList();
                 }
@@ -5381,15 +5396,21 @@ namespace Oxide.Plugins
         {
             var uiCfg = _config.UserInfo;
 
+            // CHANGE: Спящие игроки не находятся через covalence (FindPlayerById видит только подключённых),
+            // поэтому резолвим BasePlayer напрямую и не требуем наличия IPlayer
+            BasePlayer targetBasePlayer = BasePlayer.FindAwakeOrSleeping(
+                session.SelectedUserId.ToString()
+            );
             IPlayer target = covalence.Players.FindPlayerById(session.SelectedUserId.ToString());
-            if (target == null)
+            if (target == null && targetBasePlayer == null)
             {
                 session.CurrentCategory = "players";
                 RenderContent(player);
                 return;
             }
 
-            BasePlayer targetBasePlayer = BasePlayer.FindAwakeOrSleeping(target.Id);
+            string targetName = target?.Name ?? targetBasePlayer.displayName;
+            string targetId = target?.Id ?? session.SelectedUserId.ToString();
 
             int backHalfW = uiCfg.BackButton.Width / 2;
             int backHalfH = uiCfg.BackButton.Height / 2;
@@ -5509,7 +5530,7 @@ namespace Oxide.Plugins
                 container,
                 "UI_InfoPanel",
                 null,
-                $"<b>{target.Name}</b> ({target.Id})",
+                $"<b>{targetName}</b> ({targetId})",
                 uiCfg.Details.NameFontSize,
                 "robotocondensed-bold.ttf",
                 uiCfg.Details.NameColor,
@@ -5534,9 +5555,9 @@ namespace Oxide.Plugins
             // CHANGE: IP видят только администраторы (authLevel >= 2)
             bool canViewIp = HasAccess(player);
 
-            string ipAddress =
-                targetBasePlayer?.net?.connection?.ipaddress ?? target.Address ?? "N/A";
-            int ping = target.Ping;
+            // CHANGE: target.Address убран — он может кинуть NRE при null-connection; IP берём только из BasePlayer
+            string ipAddress = targetBasePlayer?.net?.connection?.ipaddress ?? "N/A";
+            int ping = GetSafePing(targetBasePlayer);
 
             string ipPing = canViewIp
                 ? Msg("UI_PING_IP", player.UserIDString, ipAddress, ping)
@@ -5568,7 +5589,10 @@ namespace Oxide.Plugins
             }
             if (Clans != null)
             {
-                string tag = Clans.Call<string>("GetClanOf", target.Id);
+                string tag = Clans.Call<string>(
+                    "GetClanOf",
+                    session.SelectedUserId.ToString()
+                );
                 if (!string.IsNullOrEmpty(tag))
                     detailsRight += Msg("UI_CLAN", player.UserIDString, tag) + "\n";
             }
@@ -8299,7 +8323,11 @@ namespace Oxide.Plugins
                 return;
 
             AdminSession session = GetSession(player);
-            session.PlayerFilter = arg.GetString(0, "online");
+            // CHANGE: Legacy-фильтр "sleeping" объединён с "offline"
+            string filterKey = arg.GetString(0, "online");
+            if (filterKey == "sleeping")
+                filterKey = "offline";
+            session.PlayerFilter = filterKey;
             session.PlayerPage = 0;
             RenderContent(player);
         }
