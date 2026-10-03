@@ -1,11 +1,4 @@
 #nullable enable
-// RRemove — режимный инструмент удаления построек и предметов для Rust (Carbon).
-// CHANGE: Полностью переработан плагин: вместо удаления молотком без режима введён командный режим
-// CHANGE: /remove (обычный), /remove admin и /remove all (AuthLevel 2), возврат ресурсов/объектов
-// CHANGE: с настраиваемыми процентами, GUI-индикатор с таймером, API canRemove/OnRemoveActivate/RemoveDeativate.
-// CHANGE: Скины построек (DLC): подменю выбора скина для каждого типа апгрейда, применение скина
-// CHANGE: к автоапгрейду планом и ударам киянкой, серверная проверка владения DLC (зеркало ванильной
-// CHANGE: проверки в DoUpgradeToGrade) и бесплатный доступ по привилегии из конфига.
 
 using System;
 using System.Collections.Generic;
@@ -23,78 +16,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    // CHANGE: 1.2.0 — подсистема скинов построек (DLC) и закрытие обхода рейд/комбат-блока
-    // CHANGE: прямым биндом команд подменю скинов (rremove.skinmenu*, rremove.skin.*).
-    // CHANGE: 1.3.0 — ванильский пейджер скинов Q/E прямо у типов апгрейда в главном меню
-    // CHANGE: (nextCommand/prevCommand в CustomPieMenu, паттерн ванильного pietest).
-    // CHANGE: 1.3.1 — листание Q/E без перерисовки колеса (GameTip-подсказка вместо
-    // CHANGE: переоткрытия меню — клиент анимирует OpenPie заново, отсюда мерцание).
-    // CHANGE: 1.3.2 — возврат к мгновенному переоткрытию: клиент сам закрывает pie при
-    // CHANGE: исполнении команды, GameTip убран — скин всегда виден в самом колесе.
-    // CHANGE: 1.3.3 — пейджер Q/E и строка скина видны только владельцам DLC-скинов или
-    // CHANGE: держателям FreeSkinPermission (без DLC и привилегии пункты апгрейда чистые).
-        // CHANGE: 1.3.4 — автосброс недоступных скинов: снятие привилегии больше не клинит
-        // CHANGE: апгрейд — выбор возвращается к «Без скина» (меню и каждое действие).
-        // CHANGE: 1.4.0 — названия скинов перенесены из конфига в локализацию: ключи Skin{ID}
-        // CHANGE: регистрируются автоматически из игровых данных и редактируются в lang-файлах;
-        // CHANGE: поле «Иконка» записей скинов удалено (автозаполнение всегда писало пустую строку).
-        // CHANGE: 1.5.0 — (1) реестр скинов больше не фильтрует enabledInStandalone: сезонные
-        // CHANGE: скины (пряничный — только на Рождество, отдельным DLC не продаётся) видны в
-        // CHANGE: меню круглый год, доступ решает ванильная проверка владения Steam-предметом;
-        // CHANGE: (2) выбор цвета покраски скинов с палитрой («Транспортный контейнер»):
-        // CHANGE: подменю с цветными кружками (CustomPieMenu.colorMode/color), цвет применяется
-        // CHANGE: сразу при апгрейде и стройке планом — ванильный механизм
-        // CHANGE: playerCustomColourToApply + ChangeGradeAndSkin(color) / SetCustomColour,
-        // CHANGE: палитры автозаполняются из игровых данных (ConstructionSkin_CustomDetail);
-        // CHANGE: (3) английская локализация переведена на английский (раньше словарь en был
-        // CHANGE: копией русского).
-        // CHANGE: 1.5.3 — ПО ТРЕБОВАНИЮ владельца удалено полностью: цветовая подсистема
-        // CHANGE: (реестр палитр, конфиг палитр, подменю цвета, команды, применение при
-        // CHANGE: апгрейде) и кнопка «Скины построек» с её подменю. Радиальное меню — ровно
-        // CHANGE: 8 пунктов из конфига (простой/админский ремув, удаление строения, закрыть,
-        // CHANGE: дерево/камень/металл/МВК); выбор скина — только пейджер Q/E у типов апгрейда.
-        // CHANGE: 1.6.0 — выбранное по просьбе владельца: при выборе типа апгрейда со скином,
-        // CHANGE: имеющим палитру (например, «Upgrade to Shipping Container» у металла), ПЕРЕД
-        // CHANGE: запуском таймера режима открывается радиальное меню выбора цвета — как колесо
-        // CHANGE: баллончика (CustomPieMenu.color/colorMode, палитра из игровых данных:
-        // CHANGE: BuildingGrade.supportsColourChange + ConstructionSkin_CustomDetail.ColourLookup);
-        // CHANGE: выбранный цвет применяется к каждому апгрейду через ванильный
-        // CHANGE: ChangeGradeAndSkin(..., color) — 0 означает случайный цвет палитры.
-        // CHANGE: 1.6.0 — исправлено направление нумерации цветов в колесе: клиент раскладывает
-        // CHANGE: пункты pie против часовой стрелки в порядке списка, поэтому палитра теперь
-        // CHANGE: отправляется от последнего цвета к первому — номера 1..N идут по часовой.
-        // CHANGE: 1.6.1 — вывод 1.6.0 о направлении оказался ошибочным (скриншот колеса: обратный
-        // CHANGE: список лёг по часовой с «Цвет 16» на 12 часах): клиент раскладывает пункты pie
-        // CHANGE: ПО ЧАСОВОЙ стрелке в порядке списка, палитра снова в естественном порядке 1..N —
-        // CHANGE: цвет N замыкает круг перед «Закрыть», «Случайный» граничит с цветом 1.
-        // CHANGE: 1.6.1 — нумерация цветов убрана вовсе (у баллончика её нет): пункт называется
-        // CHANGE: просто «Цвет», новый ключ локализации PieColourSwatch; colorMode конфига
-        // CHANGE: нормализуется до 0..1 (CustomColor/SpriteColor клиента).
-        // CHANGE: 1.6.2 — заглушка pie при выгрузке удалена: трекинг «вероятно открытых» колёс
-        // CHANGE: лгал (ESC закрывает pie без серверного события, выход игрока запись не снимал),
-        // CHANGE: и после перезагрузки плагина заглушка сама открывала белое меню с единственной
-        // CHANGE: «Закрыть». Открытое колесо переживает перезагрузку без замены: команды
-        // CHANGE: перерегистрируются теми же именами, без плагина колесо закрывается первым
-        // CHANGE: кликом по любому пункту.
-        // CHANGE: 1.6.3 — дефолтный чёрный список удаления заполнен реальными shortname
-        // CHANGE: (промышленная/большая печки, костры, фонари, нефтекубрик, лампа из банки);
-        // CHANGE: конфиги со старым пустым дефолтом [""] мигрируют на новый список при загрузке.
-        // CHANGE: 1.6.4 — настройка colorMode удалена из конфига по требованию владельца:
-        // CHANGE: клиент всегда рисует цветные кружки в режиме CustomColor (0) — иконка
-        // CHANGE: пункта окрашивается цветом палитры; ключ исчезает из файла при сохранении.
-        // CHANGE: 1.6.5 — иконка цветных кружков по умолчанию circle_open.png (с обводкой,
-        // CHANGE: как у колеса баллончика): на наведении клиент перекрашивает иконку пункта
-        // CHANGE: фиксированным hover-цветом (PieMenu.colorIconHovered, chunk18:31696), и
-        // CHANGE: сплошной белый circle_closed превращался в белую кляксу; контурный спрайт
-        // CHANGE: остаётся читаемым, а цвет несут сектор и центр наведённого пункта.
-        // CHANGE: 1.6.6 — (1) чёрный список сравнивает и shortname энтити, и shortname
-        // CHANGE: предмета-деплоя: lantern/tunalight/chineselantern — имена ПРЕДМЕТОВ
-        // CHANGE: (энтити — *.deployed), нефтекубрик — refinery_small_deployed (энтити) /
-        // CHANGE: small.oil.refinery (предмет); из-за расхождений записи не срабатывали и
-        // CHANGE: объекты поднимались ремувом; (2) дефолт списка выверен по энтити,
-        // CHANGE: дефолт 1.6.3 мигрирует канонически; (3) иконка кружков снова сплошная
-        // CHANGE: circle_closed: у circle_open тонировано только кольцо — центр белый.
-        [Info("RRemove", "RustInnovate", "1.6.6")]
+        [Info("RRemove", "RustInnovate", "1.6.7")]
     [Description("Режимное удаление построек и предметов с возвратом ресурсов и GUI-индикатором")]
     public sealed class RRemove : RustPlugin
     {
@@ -207,12 +129,19 @@ namespace Oxide.Plugins
             [JsonProperty("Список запрещенных для удаления Entity shortname (Не Item)", ObjectCreationHandling = ObjectCreationHandling.Replace)]
             public List<string> BlockedShortnames = new(DefaultBlockedShortnames);
 
-            // CHANGE: Клавиша активации задается в конфиге, но бинд выполняется один раз на клиенте
-            // CHANGE: (bind <клавиша> rremove.menu) — серверная привязка клавиш заблокирована Facepunch.
-            [JsonProperty("Клавиша активации режима удаления (бинд на клиенте: bind <клавиша> rremove.menu)")]
+            [JsonProperty("Клавиша активации режима удаления")]
             public string ActivationKey = "z";
 
-            [JsonProperty("Показывать подсказку с командой бинда при взятии киянки в руки")]
+            // CHANGE: Открытие радиального меню без бинда: перехват клиентской консольной команды
+            // CHANGE: кнопки. Работает только для клавиш со своей консольной командой:
+            // CHANGE: F = inventory.lighttoggle (включает фонарик — конфликт), X = vehicle.swapseats.
+            // CHANGE: По умолчанию OFF — активация строго по Z через одноразовый клиентский бинд
+            // CHANGE (bind z rremove.menu): клавиша Z консольной команды не имеет и сервером
+            // CHANGE без клиентского бинда не ловится.
+            [JsonProperty("Кнопка открытия радиального меню без бинда (X | F | OFF)")]
+            public string MenuOpenButton = "OFF";
+
+            [JsonProperty("Показывать подсказку кнопки открытия рад меню при взятии киянки или плана постройки в руки")]
             public bool ShowBindHint = true;
 
             [JsonProperty("Запретить использование радиального меню и функции ремува/апгрейда в рейд-блоке (true — через внешний плагин, false — встроенная система)")]
@@ -276,6 +205,12 @@ namespace Oxide.Plugins
             // CHANGE: кнопки Q/E (nextCommand/prevCommand) — листают скины типа без подменю.
             [JsonProperty("Листание скинов Q/E прямо в главном меню у типов апгрейда")]
             public bool EnableInlineSkinPaging = true;
+
+            // CHANGE: true — при листании Q/E колесо мгновенно переоткрывается с новым скином
+            // CHANGE: (клиент сам закрывает pie при исполнении команды — иначе обновление не показать);
+            // CHANGE: false — колесо не переоткрывается (без мерцания и сброса курсора), скин показывается тостом.
+            [JsonProperty("Переоткрывать радиальное меню при листании скинов Q/E (false — без мерцания, скин тостом)")]
+            public bool ReopenMenuOnSkinPage = true;
 
             [JsonProperty("Привилегия бесплатного использования любых скинов построек (для администраторов, мимо проверки владения DLC)")]
             public string FreeSkinPermission = PermSkinsFree;
@@ -689,6 +624,11 @@ namespace Oxide.Plugins
         // CHANGE: Тикер не сохраняется в поле: тип Timer из Oxide.Core недоступен при нативной
         // CHANGE: компиляции Carbon, а таймеры плагина Carbon/Oxide убивают автоматически при выгрузке.
 
+        // CHANGE: Нормализованная кнопка открытия меню (0 — OFF, 1 — X, 2 — F). Кэшируется при старте:
+        // хук OnServerCommand срабатывает на КАЖДУЮ консольную команду сервера, и аллокация строк
+        // (Trim/ToUpperInvariant) на каждый вызов давила на GC и роняла FPS.
+        private int menuOpenButton = 0;
+
         #endregion Поля и константы
 
         #region Инициализация
@@ -696,6 +636,15 @@ namespace Oxide.Plugins
         /// <summary>Регистрирует права, запускает секундный тикер обновления GUI.</summary>
         private void OnServerInitialized()
         {
+            // CHANGE: Одноразовая нормализация кнопки открытия меню (без аллокаций в горячих хуках)
+            menuOpenButton =
+                configData.Remove.MenuOpenButton?.Trim().ToUpperInvariant() switch
+                {
+                    "X" => 1,
+                    "F" => 2,
+                    _ => 0,
+                };
+
             permission.RegisterPermission(PermUse, this);
             permission.RegisterPermission(PermAdmin, this);
             permission.RegisterPermission(PermUpgrade, this);
@@ -849,24 +798,54 @@ namespace Oxide.Plugins
         /// но только пока игрок ни разу не воспользовался режимом удаления
         /// (сервер не может проверить наличие клиентского бинда, поэтому сигнал — использование режима).
         /// </summary>
+        /// <summary>
+        /// Подсказка об открытии радиального меню при взятии в руки киянки, пистолета-строителя (toolgun)
+        /// или плана постройки (planner).
+        /// X/F (открытие по кнопке, без бинда) — показывается при КАЖДОМ взятии инструмента в руки:
+        /// бинд не требуется, скрывать подсказку после первого использования не нужно.
+        /// OFF (активация по бинду) — только пока игрок ни разу не воспользовался режимом удаления
+        /// (сервер не может проверить наличие клиентского бинда, сигнал — использование режима).
+        /// </summary>
         private void OnActiveItemChanged(BasePlayer player, Item oldItem, Item newItem)
         {
-            if (player == null || !configData.Remove.ShowBindHint)
+            if (player == null || !player.IsConnected || !configData.Remove.ShowBindHint)
                 return;
-            if (knownUsers.Contains(player.userID) || newItem?.info == null)
+            if (newItem?.info == null)
+                return;
+
+            // CHANGE: menuOpenButton кэшируется при старте — без аллокаций строк в хуке
+            bool openByButton = menuOpenButton != 0;
+
+            // Режим OFF: подсказка про бинд нужна только до первого использования режима.
+            if (!openByButton && knownUsers.Contains(player.userID))
                 return;
 
             var shortname = newItem.info.shortname;
             if (
                 !shortname.Equals("hammer", StringComparison.Ordinal)
                 && !shortname.Equals("toolgun", StringComparison.Ordinal)
+                && !shortname.Equals("planner", StringComparison.Ordinal)
             )
                 return;
 
             player.Command(
                 "gametip.showtoast",
                 0,
-                Msg(player, "BindHint").Replace("{key}", configData.Remove.ActivationKey));
+                GetBindHintMessage(player));
+        }
+
+        /// <summary>
+        /// Текст подсказки об открытии радиального меню:
+        /// X/F — «нажмите кнопку» (открытие без бинда через перехват команды);
+        /// OFF — готовая команда бинда rremove.menu для консоли.
+        /// </summary>
+        private string GetBindHintMessage(BasePlayer player)
+        {
+            if (menuOpenButton == 1)
+                return Msg(player, "MenuOpenHint").Replace("{key}", "X");
+            if (menuOpenButton == 2)
+                return Msg(player, "MenuOpenHint").Replace("{key}", "F");
+            return Msg(player, "BindHint").Replace("{key}", configData.Remove.ActivationKey);
         }
 
         #endregion Инициализация
@@ -882,6 +861,7 @@ namespace Oxide.Plugins
                 {
                     ["NoPermission"] = "You don't have permission to use this command.",
                     ["BindHint"] = "Remove mode: run this once in the console (F1): bind {key} rremove.menu",
+                    ["MenuOpenHint"] = "Remove/upgrade mode: press [{key}] to open the radial menu",
                     ["BlockedShortname"] = "This entity is blocked from removal.",
                     ["CannotRemovePlayers"] = "Players cannot be removed.",
                     ["OwnNoCupboard"] = "No tool cupboard nearby: removing your own entities requires cupboard authorization.",
@@ -951,6 +931,7 @@ namespace Oxide.Plugins
                 {
                     ["NoPermission"] = "У вас нет прав на использование этой команды.",
                     ["BindHint"] = "Режим удаления: выполните один раз в консоли (F1): bind {key} rremove.menu",
+                    ["MenuOpenHint"] = "Режим удаления/апгрейда: нажмите [{key}] для открытия меню",
                     ["BlockedShortname"] = "Этот объект запрещён к удалению.",
                     ["CannotRemovePlayers"] = "Игроков удалять нельзя.",
                     ["OwnNoCupboard"] = "Рядом нет шкафа: удаление своих объектов требует авторизации в шкафу.",
@@ -1239,6 +1220,47 @@ namespace Oxide.Plugins
                 return;
             }
             SendRadialMenu(player);
+        }
+
+        /// <summary>
+        /// Перехват клиентской консольной команды кнопки (как в RAdminMenu):
+        /// X → vehicle.swapseats, F → inventory.lighttoggle. Открывает радиальное меню без бинда.
+        /// Конфиг: RemoveSettings.MenuOpenButton (X | F | OFF). Инвариант: перехват только у игроков
+        /// с правом rremove.use/rremove.admin; вне рейд/комбат-блока.
+        /// </summary>
+        private object OnServerCommand(ConsoleSystem.Arg arg)
+        {
+            if (arg == null || arg.cmd == null || menuOpenButton == 0)
+                return null;
+
+            string name = arg.cmd.Name;
+            string fullName = arg.cmd.FullName;
+            bool hit =
+                menuOpenButton == 1
+                    ? (name == "swapseats" || fullName == "vehicle.swapseats")
+                    : (
+                        name == "lighttoggle"
+                        || fullName == "inventory.lighttoggle"
+                        || name == "lighttoggle_sv"
+                        || fullName == "inventory.lighttoggle_sv"
+                    );
+            if (!hit)
+                return null;
+
+            var player = arg.Player();
+            if (player == null || !player.IsConnected)
+                return null;
+            if (!IsAdmin(player) && !permission.UserHasPermission(player.UserIDString, PermUse))
+                return null;
+            if (GetBlockDenyReason(player, out _) != null)
+                return null;
+
+            NextTick(() =>
+            {
+                if (player != null && player.IsConnected)
+                    SendRadialMenu(player);
+            });
+            return true;
         }
 
         /// <summary>Пункты выбора режима в радиальном меню. Повторный выбор активного режима выключает его.</summary>
@@ -1848,11 +1870,78 @@ namespace Oxide.Plugins
         /// </summary>
         private void RegisterSkinNameMessages()
         {
-            var names = new Dictionary<string, string>();
+            // CHANGE: КЛЮЧЕВАЯ ПРАВКА: Oxide Lang.RegisterMessages ЗАМЕНЯЕТ весь словарь языка плагина,
+            // поэтому повторная регистрация только имён скинов стирала все переводы из LoadDefaultMessages
+            // (в GUI сыпались сырые ключи: "TimeLeft", "GuiUpgradeTitle", "PieWood" и т.д.).
+            // Порядок мержа: зарегистрированные кодом переводы → правки сервера из файла
+            // lang/<язык>/RRemove.json (приоритет сервера) → канонические имена скинов из игровых
+            // данных ТОЛЬКО для отсутствующих ключей (серверные переводы скинов не перезатираются).
+            var namesEn = new Dictionary<string, string>(
+                lang.GetMessages("en", this) ?? new Dictionary<string, string>()
+            );
+            var namesRu = new Dictionary<string, string>(
+                lang.GetMessages("ru", this) ?? new Dictionary<string, string>()
+            );
+            MergeLangFileOverlay(namesEn, "en");
+            MergeLangFileOverlay(namesRu, "ru");
+
             foreach (var pair in skinNamesById)
-                names[SkinNameLangKey(pair.Key)] = pair.Value;
-            lang.RegisterMessages(names, this, "en");
-            lang.RegisterMessages(names, this, "ru");
+            {
+                string key = SkinNameLangKey(pair.Key);
+                if (!namesEn.ContainsKey(key))
+                    namesEn[key] = pair.Value;
+                if (!namesRu.ContainsKey(key))
+                    namesRu[key] = pair.Value;
+            }
+
+            // CHANGE: Скины из конфига, которых нет в игровых данных (например, ID из другого
+            // источника), тоже получают ключи локализации — иначе в GUI показывался сырой "Skin{ID}".
+            foreach (var (_, entries) in SkinConfigLists())
+            {
+                foreach (var entry in entries)
+                {
+                    if (entry?.SkinId == null || entry.SkinId == 0UL)
+                        continue;
+                    string key = SkinNameLangKey(entry.SkinId);
+                    if (namesEn.ContainsKey(key))
+                        continue;
+                    string fallback = LookupItemSkinName(entry.SkinId) ?? $"Skin {entry.SkinId}";
+                    namesEn[key] = fallback;
+                    namesRu[key] = fallback;
+                }
+            }
+
+            lang.RegisterMessages(namesEn, this, "en");
+            lang.RegisterMessages(namesRu, this, "ru");
+        }
+
+        /// <summary>
+        /// Накладывает поверх словаря переводов правки сервера из файла lang/&lt;язык&gt;/RRemove.json:
+        /// lang.GetMessages возвращает только словари, зарегистрированные кодом, поэтому ключи,
+        /// добавленные сервером напрямую в файл (например, Skin10220 для скина из конфига вне
+        /// игровых данных), иначе терялись бы при перерегистрации.
+        /// Постусловие: entries содержит все пары файла; значения файла приоритетнее кодовых.
+        /// Сложность: O(n), n — число ключей файла.
+        /// </summary>
+        private void MergeLangFileOverlay(Dictionary<string, string> entries, string langCode)
+        {
+            try
+            {
+                var fromDisk =
+                    Interface.Oxide.DataFileSystem.ReadObject<Dictionary<string, string>>(
+                        $"lang/{langCode}/{Title}"
+                    ) ?? new Dictionary<string, string>();
+                foreach (var pair in fromDisk)
+                {
+                    if (!string.IsNullOrEmpty(pair.Key) && pair.Value != null)
+                        entries[pair.Key] = pair.Value;
+                }
+            }
+            catch (Exception ex)
+            {
+                // Файл может отсутствовать или быть повреждён — не критично.
+                Puts($"[RRemove] Не удалось прочитать lang/{langCode}/{Title}.json: {ex.Message}");
+            }
         }
 
         /// <summary>
@@ -1866,9 +1955,73 @@ namespace Oxide.Plugins
             if (skinId == 0UL)
                 return Msg(player, "PieSkinNone");
             var localized = lang.GetMessage(SkinNameLangKey(skinId), this, player.UserIDString);
-            if (!string.IsNullOrEmpty(localized))
+            // CHANGE: Oxide GetMessage возвращает САМ КЛЮЧ, если перевод не зарегистрирован —
+            // такое значение нельзя показывать ("Скин: Skin10220"). Откат: имя скина из
+            // assets/skins.asset (ItemSkinDirectory), затем имя из реестра, затем ID.
+            if (!string.IsNullOrEmpty(localized) && localized != SkinNameLangKey(skinId))
                 return localized;
+            var directoryName = LookupItemSkinName(skinId);
+            if (!string.IsNullOrEmpty(directoryName))
+                return directoryName;
             return skinNamesById.TryGetValue(skinId, out var name) ? name : $"ID {skinId}";
+        }
+
+        /// <summary>
+        /// Ищет каноническое имя скина в игровых данных assets/skins.asset (ItemSkinDirectory).
+        /// Постусловие: null — скин с таким ID в директории не найден.
+        /// Сложность: O(s), s — число скинов в директории (вызывается только при отсутствии ключа локализации).
+        /// </summary>
+        private static string? LookupItemSkinName(ulong skinId)
+        {
+            try
+            {
+                var skins = ItemSkinDirectory.Instance?.skins;
+                if (skins == null)
+                    return null;
+                foreach (var skin in skins)
+                {
+                    if ((ulong)skin.id != skinId)
+                        continue;
+
+                    // CHANGE: skin.name — это ПУТЬ АССЕТА ("assets/prefabs/misc/buildingskins/
+                    // space_station/space_station.sitem.asset"), а не название. Пытаемся взять
+                    // displayName предмета скина (skin.itemid), иначе «очеловечиваем» путь:
+                    // последний сегмент без ".sitem.asset", подчёркивания → пробелы.
+                    var skinItemDef = ItemManager.FindItemDefinition(skin.itemid);
+                    string display = skinItemDef?.displayName?.english;
+                    if (string.IsNullOrEmpty(display))
+                        display = PrettifySkinAssetPath(skin.name);
+                    if (!string.IsNullOrEmpty(display))
+                        return display;
+                }
+            }
+            catch (Exception)
+            {
+                // assets/skins.asset недоступен — не критично, сработает следующий fallback.
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// «очеловечивает» путь ассета скина: "assets/prefabs/misc/buildingskins/space_station/
+        /// space_station.sitem.asset" → "Space Station".
+        /// Постусловие: null — путь пустой или не заканчивается на .sitem.asset.
+        /// Сложность: O(len(path)).
+        /// </summary>
+        private static string? PrettifySkinAssetPath(string path)
+        {
+            if (string.IsNullOrEmpty(path))
+                return null;
+            const string suffix = ".sitem.asset";
+            int slash = path.LastIndexOf('/');
+            string segment =
+                slash >= 0 ? path.Substring(slash + 1) : path;
+            if (segment.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                segment = segment.Substring(0, segment.Length - suffix.Length);
+            if (string.IsNullOrEmpty(segment))
+                return null;
+            segment = segment.Replace('_', ' ');
+            return char.ToUpperInvariant(segment[0]) + segment.Substring(1);
         }
 
         /// <summary>
@@ -2208,13 +2361,23 @@ namespace Oxide.Plugins
             if (index < 0)
                 index = 0;
             var target = usable[(index + direction + usable.Count) % usable.Count];
-            SetSelectedSkin(player, grade, target);
-
             // CHANGE: Клиент закрывает pie при исполнении любой его команды (в т.ч. nextCommand/
-            // prevCommand) — держать колесо открытым при листании невозможно. Единственный способ
-            // показать обновлённый скин в самом меню — мгновенно переоткрыть его (паттерн
-            // pietest_next); закрывает меню по-прежнему только сам игрок («Закрыть»/ESC).
-            SendRadialMenu(player);
+            // prevCommand) — держать колесо открытым при листании невозможно.
+            // CHANGE: ReopenMenuOnSkinPage: true — мгновенное переоткрытие колеса с новым скином;
+            // false — колесо НЕ переоткрывается (без мерцания/сброса курсора), выбранный скин
+            // показывается GameTip-тостом.
+            SetSelectedSkin(player, grade, target);
+            if (configData.Skins.ReopenMenuOnSkinPage)
+            {
+                SendRadialMenu(player);
+            }
+            else
+            {
+                Toast(
+                    player,
+                    $"{Msg(player, GradeLangKey(grade))}: {SkinDisplayName(player, target)}"
+                );
+            }
         }
 
         #endregion Скины построек
