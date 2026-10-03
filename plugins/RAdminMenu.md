@@ -4,7 +4,7 @@
 
 ## Информация
 - **Автор:** RustInnovate
-- **Версия:** 2.0.3
+- **Версия:** 2.0.4
 - **Категория:** Бесплатные плагины
 
 # RAdminMenu
@@ -68,4 +68,4 @@
 - Весь интерфейс собирается в один `CuiElementContainer` и отправляется одним RPC-пакетом.
 - Спектейт реализован через Harmony-патч `BasePlayer.Tick_Spectator`.
 - Опасные действия проходят через модальное подтверждение (`radminmenu.act_confirmed`).
-![image](images/img_20260910_211351_RAdminMenu1.png)![image](images/img_20260910_211351_RAdminMenu2.png)
+
