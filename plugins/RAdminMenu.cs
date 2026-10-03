@@ -17,8 +17,7 @@ using UnityEngine.UI;
 
 namespace Oxide.Plugins
 {
-        // CHANGE: Версия повышена до 2.0.2 — фикс сброса скролла при кликах по блоку «Время суток» (точечные обновления вместо RenderContent)
-        [Info("RAdminMenu", "RustInnovate", "2.0.2")]
+        [Info("RAdminMenu", "RustInnovate", "2.0.3")]
     [Description("Современное модульное меню администратора")]
     public class RAdminMenu : RustPlugin
     {
@@ -98,13 +97,9 @@ namespace Oxide.Plugins
             new Dictionary<ulong, AdminSession>();
         private readonly HashSet<ulong> _tpMarkerPlayers = new HashSet<ulong>();
 
-        // CHANGE: Хранилище идентификаторов игроков с активным креативным режимом
-        private readonly HashSet<ulong> _creativePlayers = new HashSet<ulong>();
-
-        // CHANGE: Снапшот нативных конвар Creative.* на момент включения креатива — для возврата исходных значений
-        private bool _creativeConvarsSnapshotTaken;
-        private readonly Dictionary<string, bool> _creativeConvarsSnapshot =
-            new Dictionary<string, bool>();
+        // CHANGE: Креатив-режим полностью удалён из плагина: нативный клиент сам показывает выбор
+        // строительных скинов в колесе плана при флаге CreativeMode + конваре creative.freebuild
+        // (серверно подавить эти пункты нельзя), а скины построек на сервере реализованы плагином RRemove.
         private readonly Dictionary<ulong, SteamInfo> _cachedSteamInfo =
             new Dictionary<ulong, SteamInfo>();
 
@@ -158,34 +153,6 @@ namespace Oxide.Plugins
 
             [JsonProperty("Фон затемнения экрана")]
             public string OverlayColor = "0 0 0 0.70";
-
-            // CHANGE: Индекс цвета по умолчанию для построек из контейнеров в креатив-режиме (0 - стандартный)
-            [JsonProperty("Цвет контейнеров по умолчанию при постройке (0-15)")]
-            public uint DefaultContainerColor = 0;
-        }
-
-        // CHANGE: Нативные конвары Creative.* вынесены в конфиг. Игра гейтит каждую креатив-возможность парой
-        // (флаг игрока CreativeMode + серверный конвар), поэтому без включения конваров флаг сам по себе ничего не даёт.
-        public class CreativeSettings
-        {
-            [JsonProperty("Бесплатная постройка и улучшение (creative.freebuild)")]
-            public bool FreeBuild = true;
-
-            [JsonProperty("Бесплатный ремонт (creative.freerepair)")]
-            public bool FreeRepair = true;
-
-            [JsonProperty("Игнорирование проверок размещения (creative.freeplacement)")]
-            public bool FreePlacement = true;
-
-            [JsonProperty("Пропуск задержки удержания при установке (creative.bypassholdtoplaceduration)")]
-            public bool BypassHoldToPlaceDuration = true;
-
-            [JsonProperty("Безлимитные электрические соединения (creative.unlimitedio)")]
-            public bool UnlimitedIo = true;
-
-            // CHANGE: По умолчанию выключено — это failsafe-конвар игры; клиентские команды always-on вдобавок требуют прав администратора
-            [JsonProperty("Разрешить переключение Always-On (creative.alwaysonenabled)")]
-            public bool AlwaysOn = false;
         }
 
         public class NavigationHeaderSettings
@@ -431,13 +398,6 @@ namespace Oxide.Plugins
 
             [JsonProperty("Цвет кнопки Очистить инвентарь")]
             public string ClearInvButtonColor = "0.75 0.25 0.25 0.85";
-
-            // CHANGE: Цвета кнопки креатив-режима (обычное и активное состояние) вынесены в конфиг
-            [JsonProperty("Цвет кнопки Креатив-режим")]
-            public string CreativeButtonColor = "0.25 0.69 1 0.85";
-
-            [JsonProperty("Цвет активной кнопки Креатив-режим")]
-            public string CreativeActiveButtonColor = "0.28 0.65 0.32 0.85";
         }
 
         public class QuickMenuEventsCardSettings
@@ -1830,10 +1790,6 @@ namespace Oxide.Plugins
             [JsonProperty("Общие настройки")]
             public GeneralSettings General = new GeneralSettings();
 
-            // CHANGE: Секция креатив-режима — управление нативными конварами Creative.*
-            [JsonProperty("Настройки креатив-режима")]
-            public CreativeSettings Creative = new CreativeSettings();
-
             [JsonProperty("Панель навигации (левая панель)")]
             public NavigationSettings Navigation = new NavigationSettings();
 
@@ -1888,8 +1844,6 @@ namespace Oxide.Plugins
             // CHANGE: Валидация и инициализация всех подсекций для плавной миграции конфига
             if (_config.General == null)
                 _config.General = new GeneralSettings();
-            if (_config.Creative == null)
-                _config.Creative = new CreativeSettings();
             if (_config.Navigation == null)
                 _config.Navigation = new NavigationSettings();
             if (_config.Header == null)
@@ -1994,8 +1948,6 @@ namespace Oxide.Plugins
                     ["QM_REPAIR"] = "REPAIR ITEMS",
                     ["QM_ACT_REPAIR"] = "REPAIR ITEMS",
                     ["QM_CLEAR_INV"] = "CLEAR INVENTORY",
-                    // CHANGE: Кнопка креатив-режима в Быстром меню
-                    ["QM_CREATIVE"] = "CREATIVE MODE",
                     ["QM_ACT_CLEAR_INV"] = "CLEAR INVENTORY",
 
                     ["QM_GROUP_EVENTS"] = "EVENT SPAWNER",
@@ -2140,8 +2092,6 @@ namespace Oxide.Plugins
                     ["ACT_CLEAR_RAD_SUCCESS"] = "<color=#52e252>Radiation cleared for {0}!</color>",
                     ["ACT_SPECTATE"] = "SPECTATE",
                     ["USER_ACT_SPECTATE"] = "SPECTATE",
-                    ["ACT_CREATIVE"] = "CREATIVE MODE",
-                    ["USER_ACT_CREATIVE"] = "CREATIVE MODE",
                     ["ACT_CUFF"] = "HANDCUFFS",
                     ["USER_ACT_CUFF"] = "HANDCUFFS",
                     ["ACT_STRIP_INV"] = "STRIP INVENTORY",
@@ -2157,14 +2107,6 @@ namespace Oxide.Plugins
                     ["USER_ACT_REVOKE_BP"] = "REVOKE BLUEPRINTS",
                     ["ACT_KILL"] = "KILL",
                     ["USER_ACT_KILL"] = "KILL",
-                    ["ACT_CREATIVE_ENABLED"] =
-                        "<color=#52e252>Creative mode enabled for {0}!</color>",
-                    ["ACT_CREATIVE_DISABLED"] =
-                        "<color=#e25252>Creative mode disabled for {0}!</color>",
-                    ["ACT_CREATIVE_TARGET_ON"] =
-                        "<color=#52e252>You have been granted creative mode!</color>",
-                    ["ACT_CREATIVE_TARGET_OFF"] =
-                        "<color=#e25252>Your creative mode has been disabled.</color>",
                     ["ERR_NO_BACKPACK"] =
                         "<color=#e25252>Player {0} does not have a backpack equipped!</color>",
 
@@ -2252,8 +2194,6 @@ namespace Oxide.Plugins
                     ["QM_REPAIR"] = "ПОЧИНКА ПРЕДМЕТОВ",
                     ["QM_ACT_REPAIR"] = "ПОЧИНКА ПРЕДМЕТОВ",
                     ["QM_CLEAR_INV"] = "ОЧИСТИТЬ ИНВЕНТАРЬ",
-                    // CHANGE: Кнопка креатив-режима в Быстром меню
-                    ["QM_CREATIVE"] = "КРЕАТИВ-РЕЖИМ",
                     ["QM_ACT_CLEAR_INV"] = "ОЧИСТИТЬ ИНВЕНТАРЬ",
 
                     ["QM_GROUP_EVENTS"] = "ВЫЗОВ ИВЕНТОВ",
@@ -2398,8 +2338,6 @@ namespace Oxide.Plugins
                     ["ACT_CLEAR_RAD_SUCCESS"] = "<color=#52e252>Радиация снята у игрока {0}!</color>",
                     ["ACT_SPECTATE"] = "СПЕКТЕЙТ",
                     ["USER_ACT_SPECTATE"] = "СПЕКТЕЙТ",
-                    ["ACT_CREATIVE"] = "КРЕАТИВ-РЕЖИМ",
-                    ["USER_ACT_CREATIVE"] = "КРЕАТИВ-РЕЖИМ",
                     ["ACT_CUFF"] = "НАРУЧНИКИ",
                     ["USER_ACT_CUFF"] = "НАРУЧНИКИ",
                     ["ACT_STRIP_INV"] = "ОЧИСТИТЬ ИНВЕНТАРЬ",
@@ -2415,13 +2353,6 @@ namespace Oxide.Plugins
                     ["USER_ACT_REVOKE_BP"] = "СБРОСИТЬ ЧЕРТЕЖИ",
                     ["ACT_KILL"] = "УБИТЬ",
                     ["USER_ACT_KILL"] = "УБИТЬ",
-                    ["ACT_CREATIVE_ENABLED"] =
-                        "<color=#52e252>Креатив-режим включен для {0}!</color>",
-                    ["ACT_CREATIVE_DISABLED"] =
-                        "<color=#e25252>Креатив-режим отключен для {0}!</color>",
-                    ["ACT_CREATIVE_TARGET_ON"] =
-                        "<color=#52e252>Вам выдан креатив-режим (бесплатный крафт и постройка)!</color>",
-                    ["ACT_CREATIVE_TARGET_OFF"] = "<color=#e25252>Креатив-режим отключен.</color>",
                     ["ERR_NO_BACKPACK"] = "<color=#e25252>У игрока {0} не надет рюкзак!</color>",
 
                     // Permissions
@@ -2745,22 +2676,6 @@ namespace Oxide.Plugins
 
             _sessions.Clear();
             _tpMarkerPlayers.Clear();
-            // CHANGE: Снятие флага CreativeMode и клиентского креатив-UI у всех креатив-игроков до выгрузки —
-            // иначе после перезагрузки плагина игроки остаются с флагом, но уже без отслеживания плагином
-            foreach (ulong creativeId in _creativePlayers.ToList())
-            {
-                BasePlayer creativePlayer = BasePlayer.FindByID(creativeId);
-                if (creativePlayer == null)
-                    continue;
-
-                creativePlayer.SetPlayerFlag(BasePlayer.PlayerFlags.CreativeMode, false);
-                if (creativePlayer.IsConnected)
-                    creativePlayer.Command("debug.setcreative_ui", false);
-                creativePlayer.SendNetworkUpdateImmediate();
-            }
-            // CHANGE: Перед очисткой коллекции возвращаем нативные конвары Creative.* в исходное состояние
-            ApplyCreativeConvars(false);
-            _creativePlayers.Clear();
             _cuffedPlayers.Clear();
             _cachedSteamInfo.Clear();
             Instance = null;
@@ -2776,9 +2691,6 @@ namespace Oxide.Plugins
             CleanupInspector(player.userID);
             _sessions.Remove(player.userID);
             _tpMarkerPlayers.Remove(player.userID);
-            _creativePlayers.Remove(player.userID);
-            // CHANGE: Если креатив-игроков не осталось — возвращаем нативные конвары Creative.* в выключенное состояние
-            RestoreCreativeConvarsIfNoneLeft();
             _cuffedPlayers.Remove(player.userID);
         }
 
@@ -2999,6 +2911,156 @@ namespace Oxide.Plugins
 
         #region UI Rendering Core
 
+        // CHANGE: Добавлены общие CUI-хелперы — устраняют дублирование шаблонной отрисовки,
+        // сокращают объём кода (время компиляции на хостинге). Все размеры/цвета/позиции
+        // передаются параметрами из конфигурации — хардкод значений в отрисовке отсутствует.
+
+        /// <summary>Добавляет CuiLabel с полной якорной геометрией.</summary>
+        /// <param name="anchorMin/Max">Якоря углов (например "0 0.45").</param>
+        /// <param name="offsetMin/Max">Офсеты углов в пикселях ("x y").</param>
+        /// <remarks>Инвариант: color/fontSize/font передаются из конфигурации вызывающего кода.</remarks>
+        private static void AddLabel(
+            CuiElementContainer container,
+            string parent,
+            string name,
+            string text,
+            int fontSize,
+            string font,
+            string color,
+            TextAnchor align,
+            string anchorMin,
+            string anchorMax,
+            string offsetMin = "0 0",
+            string offsetMax = "0 0"
+        )
+        {
+            container.Add(
+                new CuiLabel
+                {
+                    Text = { Text = text, FontSize = fontSize, Font = font, Align = align, Color = color },
+                    RectTransform =
+                    {
+                        AnchorMin = anchorMin,
+                        AnchorMax = anchorMax,
+                        OffsetMin = offsetMin,
+                        OffsetMax = offsetMax,
+                    },
+                },
+                parent,
+                name
+            );
+        }
+
+        /// <summary>Добавляет CuiPanel и возвращает имя элемента.</summary>
+        /// <remarks>Инвариант: color и геометрия передаются из конфигурации вызывающего кода.</remarks>
+        private static string AddPanel(
+            CuiElementContainer container,
+            string parent,
+            string name,
+            string color,
+            string anchorMin,
+            string anchorMax,
+            string offsetMin = "0 0",
+            string offsetMax = "0 0",
+            string imageType = null,
+            bool cursor = false
+        )
+        {
+            var panel = new CuiPanel
+            {
+                Image =
+                {
+                    Color = color,
+                },
+                RectTransform =
+                {
+                    AnchorMin = anchorMin,
+                    AnchorMax = anchorMax,
+                    OffsetMin = offsetMin,
+                    OffsetMax = offsetMax,
+                },
+                CursorEnabled = cursor,
+            };
+            container.Add(panel, parent, name);
+            return name;
+        }
+
+        /// <summary>Добавляет CuiButton (с опциональным текстом) и возвращает имя элемента.</summary>
+        /// <remarks>Инвариант: color/геометрия передаются из конфигурации вызывающего кода.</remarks>
+        private static string AddButton(
+            CuiElementContainer container,
+            string parent,
+            string name,
+            string command,
+            string color,
+            string anchorMin,
+            string anchorMax,
+            string offsetMin,
+            string offsetMax,
+            string text = "",
+            int fontSize = 0,
+            string font = null,
+            string textColor = null,
+            TextAnchor align = TextAnchor.MiddleCenter
+        )
+        {
+            var button = new CuiButton
+            {
+                Button = { Command = command, Color = color },
+                Text =
+                {
+                    Text = text,
+                    FontSize = fontSize,
+                    Font = font ?? "robotocondensed-regular.ttf",
+                    Align = align,
+                    Color = textColor ?? "1 1 1 1",
+                },
+                RectTransform =
+                {
+                    AnchorMin = anchorMin,
+                    AnchorMax = anchorMax,
+                    OffsetMin = offsetMin,
+                    OffsetMax = offsetMax,
+                },
+            };
+            container.Add(button, parent, name);
+            return name;
+        }
+
+        /// <summary>Добавляет CuiElement-кнопку с произвольными компонентами и возвращает имя элемента.</summary>
+        private static string AddElementButton(
+            CuiElementContainer container,
+            string parent,
+            string name,
+            string command,
+            string color,
+            string anchorMin,
+            string anchorMax,
+            string offsetMin,
+            string offsetMax
+        )
+        {
+            container.Add(
+                new CuiButton
+                {
+                    Button = { Command = command, Color = color },
+                    RectTransform =
+                    {
+                        AnchorMin = anchorMin,
+                        AnchorMax = anchorMax,
+                        OffsetMin = offsetMin,
+                        OffsetMax = offsetMax,
+                    },
+                    Text = { Text = "" },
+                },
+                parent,
+                name
+            );
+            return name;
+        }
+
+        // CHANGE: Конец блока общих CUI-хелперов
+
         // CHANGE: Единая пакетная сборка полного интерфейса меню в один CuiElementContainer (1 RPC пакет)
         private void RenderFullMenu(BasePlayer player)
         {
@@ -3072,55 +3134,43 @@ namespace Oxide.Plugins
         }
 
         // CHANGE: Добавление базового каркаса панели навигации в контейнер
+        // CHANGE: отрисовка переведена на общие CUI-хелперы (сокращение объёма)
         private void AddNavigationBase(CuiElementContainer container, BasePlayer player)
         {
             var navCfg = _config.Navigation;
             int halfW = navCfg.Panel.Width / 2;
             int halfH = navCfg.Panel.Height / 2;
 
-            container.Add(
-                new CuiPanel
-                {
-                    Image = { Color = navCfg.BackgroundColor },
-                    RectTransform =
-                    {
-                        AnchorMin = "0.5 0.5",
-                        AnchorMax = "0.5 0.5",
-                        OffsetMin =
-                            $"{navCfg.Panel.OffsetX - halfW} {navCfg.Panel.OffsetY - halfH}",
-                        OffsetMax =
-                            $"{navCfg.Panel.OffsetX + halfW} {navCfg.Panel.OffsetY + halfH}",
-                    },
-                },
+            AddPanel(
+                container,
                 LayerMain,
-                LayerNavigation
+                LayerNavigation,
+                navCfg.BackgroundColor,
+                "0.5 0.5",
+                "0.5 0.5",
+                $"{navCfg.Panel.OffsetX - halfW} {navCfg.Panel.OffsetY - halfH}",
+                $"{navCfg.Panel.OffsetX + halfW} {navCfg.Panel.OffsetY + halfH}"
             );
 
             // Логотип / Название меню
-            container.Add(
-                new CuiLabel
-                {
-                    Text =
-                    {
-                        Text = Msg("NAV_HEADER_TITLE", player.UserIDString),
-                        Align = TextAnchor.MiddleCenter,
-                        FontSize = navCfg.Header.FontSize,
-                        Font = "robotocondensed-bold.ttf",
-                        Color = navCfg.Header.TextColor,
-                    },
-                    RectTransform =
-                    {
-                        AnchorMin = "0 1",
-                        AnchorMax = "1 1",
-                        OffsetMin = $"0 {-navCfg.Header.Height}",
-                        OffsetMax = "0 0",
-                    },
-                },
-                LayerNavigation
+            AddLabel(
+                container,
+                LayerNavigation,
+                null,
+                Msg("NAV_HEADER_TITLE", player.UserIDString),
+                navCfg.Header.FontSize,
+                "robotocondensed-bold.ttf",
+                navCfg.Header.TextColor,
+                TextAnchor.MiddleCenter,
+                "0 1",
+                "1 1",
+                $"0 {-navCfg.Header.Height}",
+                "0 0"
             );
         }
 
         // CHANGE: Добавление кнопок навигации в контейнер
+        // CHANGE: отрисовка переведена на общие CUI-хелперы (сокращение объёма)
         private void AddNavigationButtons(
             CuiElementContainer container,
             BasePlayer player,
@@ -3129,20 +3179,13 @@ namespace Oxide.Plugins
         {
             var navCfg = _config.Navigation;
 
-            container.Add(
-                new CuiPanel
-                {
-                    Image = { Color = "0 0 0 0" },
-                    RectTransform =
-                    {
-                        AnchorMin = "0 0",
-                        AnchorMax = "1 1",
-                        OffsetMin = "0 0",
-                        OffsetMax = "0 0",
-                    },
-                },
+            AddPanel(
+                container,
                 LayerNavigation,
-                LayerNavButtons
+                LayerNavButtons,
+                "0 0 0 0",
+                "0 0",
+                "1 1"
             );
 
             // Кнопки навигации
@@ -3169,28 +3212,21 @@ namespace Oxide.Plugins
 
                 string cmdAction = $"radminmenu.nav {catKey}";
 
-                container.Add(
-                    new CuiButton
-                    {
-                        Button = { Command = cmdAction, Color = btnColor },
-                        RectTransform =
-                        {
-                            AnchorMin = "0.5 0.5",
-                            AnchorMax = "0.5 0.5",
-                            OffsetMin = $"{-btnHalfW} {btnY - btnHalfH}",
-                            OffsetMax = $"{btnHalfW} {btnY + btnHalfH}",
-                        },
-                        Text =
-                        {
-                            Text = Msg(langKey, player.UserIDString),
-                            Align = TextAnchor.MiddleCenter,
-                            FontSize = navCfg.Buttons.FontSize,
-                            Font = "robotocondensed-bold.ttf",
-                            Color = navCfg.Buttons.TextColor,
-                        },
-                    },
+                AddButton(
+                    container,
                     LayerNavButtons,
-                    $"NavBtn_{catKey}"
+                    $"NavBtn_{catKey}",
+                    cmdAction,
+                    btnColor,
+                    "0.5 0.5",
+                    "0.5 0.5",
+                    $"{-btnHalfW} {btnY - btnHalfH}",
+                    $"{btnHalfW} {btnY + btnHalfH}",
+                    Msg(langKey, player.UserIDString),
+                    navCfg.Buttons.FontSize,
+                    "robotocondensed-bold.ttf",
+                    navCfg.Buttons.TextColor,
+                    TextAnchor.MiddleCenter
                 );
             }
         }
@@ -3225,32 +3261,27 @@ namespace Oxide.Plugins
         }
 
         // CHANGE: Добавление базового каркаса шапки в контейнер
+        // CHANGE: отрисовка переведена на общие CUI-хелперы (сокращение объёма)
         private void AddHeaderBase(CuiElementContainer container, BasePlayer player)
         {
             var headerCfg = _config.Header;
             int halfW = headerCfg.Panel.Width / 2;
             int halfH = headerCfg.Panel.Height / 2;
 
-            container.Add(
-                new CuiPanel
-                {
-                    Image = { Color = headerCfg.BackgroundColor },
-                    RectTransform =
-                    {
-                        AnchorMin = "0.5 0.5",
-                        AnchorMax = "0.5 0.5",
-                        OffsetMin =
-                            $"{headerCfg.Panel.OffsetX - halfW} {headerCfg.Panel.OffsetY - halfH}",
-                        OffsetMax =
-                            $"{headerCfg.Panel.OffsetX + halfW} {headerCfg.Panel.OffsetY + halfH}",
-                    },
-                },
+            AddPanel(
+                container,
                 LayerMain,
-                LayerHeader
+                LayerHeader,
+                headerCfg.BackgroundColor,
+                "0.5 0.5",
+                "0.5 0.5",
+                $"{headerCfg.Panel.OffsetX - halfW} {headerCfg.Panel.OffsetY - halfH}",
+                $"{headerCfg.Panel.OffsetX + halfW} {headerCfg.Panel.OffsetY + halfH}"
             );
         }
 
         // CHANGE: Добавление заголовка шапки в контейнер
+        // CHANGE: отрисовка переведена на общие CUI-хелперы (сокращение объёма)
         private void AddHeaderTitle(
             CuiElementContainer container,
             BasePlayer player,
@@ -3263,31 +3294,24 @@ namespace Oxide.Plugins
                 ? Msg("NAV_USERINFO", player.UserIDString)
                 : Msg($"NAV_{session.CurrentCategory.ToUpper()}", player.UserIDString);
 
-            container.Add(
-                new CuiLabel
-                {
-                    Text =
-                    {
-                        Text = categoryTitle,
-                        Align = TextAnchor.MiddleLeft,
-                        FontSize = headerCfg.Title.FontSize,
-                        Font = "robotocondensed-bold.ttf",
-                        Color = headerCfg.Title.TextColor,
-                    },
-                    RectTransform =
-                    {
-                        AnchorMin = "0 0",
-                        AnchorMax = "0.5 1",
-                        OffsetMin = $"{headerCfg.Title.OffsetX} 0",
-                        OffsetMax = "0 0",
-                    },
-                },
+            AddLabel(
+                container,
                 LayerHeader,
-                LayerHeaderTitle
+                LayerHeaderTitle,
+                categoryTitle,
+                headerCfg.Title.FontSize,
+                "robotocondensed-bold.ttf",
+                headerCfg.Title.TextColor,
+                TextAnchor.MiddleLeft,
+                "0 0",
+                "0.5 1",
+                $"{headerCfg.Title.OffsetX} 0",
+                "0 0"
             );
         }
 
         // CHANGE: Добавление блока статистики сервера в контейнер
+        // CHANGE: отрисовка переведена на общие CUI-хелперы (сокращение объёма)
         private void AddHeaderInfo(
             CuiElementContainer container,
             BasePlayer player,
@@ -3301,27 +3325,19 @@ namespace Oxide.Plugins
 
             string infoText = Msg("HEADER_ONLINE", player.UserIDString, online, max, sleepers, fps);
 
-            container.Add(
-                new CuiLabel
-                {
-                    Text =
-                    {
-                        Text = infoText,
-                        Align = TextAnchor.MiddleRight,
-                        FontSize = headerCfg.Info.FontSize,
-                        Font = "robotocondensed-regular.ttf",
-                        Color = headerCfg.Info.TextColor,
-                    },
-                    RectTransform =
-                    {
-                        AnchorMin = "0.5 0",
-                        AnchorMax = "1 1",
-                        OffsetMin = "0 0",
-                        OffsetMax = $"{headerCfg.Info.OffsetX} 0",
-                    },
-                },
+            AddLabel(
+                container,
                 LayerHeader,
-                LayerHeaderInfo
+                LayerHeaderInfo,
+                infoText,
+                headerCfg.Info.FontSize,
+                "robotocondensed-regular.ttf",
+                headerCfg.Info.TextColor,
+                TextAnchor.MiddleRight,
+                "0.5 0",
+                "1 1",
+                "0 0",
+                $"{headerCfg.Info.OffsetX} 0"
             );
         }
 
@@ -3422,6 +3438,7 @@ namespace Oxide.Plugins
         /// </summary>
         /// <param name="player">Администратор, просматривающий карточку игрока</param>
         // CHANGE: Точечное обновление характеристик игрока (сессия, здоровье, радиация, пинг) в реальном времени
+        // CHANGE: отрисовка переведена на общие CUI-хелперы (сокращение объёма)
         private void UpdateUserInfoRealtime(BasePlayer player)
         {
             if (player == null || !player.IsConnected)
@@ -3492,78 +3509,56 @@ namespace Oxide.Plugins
 
             var container = new CuiElementContainer();
 
-            container.Add(
-                new CuiLabel
-                {
-                    Text =
-                    {
-                        Text = detailsLeft,
-                        Align = TextAnchor.MiddleLeft,
-                        FontSize = uiCfg.Details.DetailsFontSize,
-                        Font = "robotocondensed-regular.ttf",
-                        Color = uiCfg.Details.DetailsColor,
-                    },
-                    RectTransform =
-                    {
-                        AnchorMin = "0 0",
-                        AnchorMax = "0.5 1",
-                        OffsetMin = $"{uiCfg.Details.LeftColumnOffsetMinX} -25",
-                        OffsetMax = "0 0",
-                    },
-                },
+            AddLabel(
+                container,
                 "UI_InfoPanel",
-                "UI_Info_DetailsLeft"
+                "UI_Info_DetailsLeft",
+                detailsLeft,
+                uiCfg.Details.DetailsFontSize,
+                "robotocondensed-regular.ttf",
+                uiCfg.Details.DetailsColor,
+                TextAnchor.MiddleLeft,
+                "0 0",
+                "0.5 1",
+                $"{uiCfg.Details.LeftColumnOffsetMinX} -25",
+                "0 0"
             );
 
-            container.Add(
-                new CuiLabel
-                {
-                    Text =
-                    {
-                        Text = detailsRight,
-                        Align = TextAnchor.MiddleLeft,
-                        FontSize = uiCfg.Details.DetailsFontSize,
-                        Font = "robotocondensed-regular.ttf",
-                        Color = uiCfg.Details.DetailsColor,
-                    },
-                    RectTransform =
-                    {
-                        AnchorMin = "0.5 0",
-                        AnchorMax = "1 1",
-                        OffsetMin = "0 -25",
-                        OffsetMax = $"{uiCfg.Details.RightColumnOffsetMaxX} 0",
-                    },
-                },
+            AddLabel(
+                container,
                 "UI_InfoPanel",
-                "UI_Info_DetailsRight"
+                "UI_Info_DetailsRight",
+                detailsRight,
+                uiCfg.Details.DetailsFontSize,
+                "robotocondensed-regular.ttf",
+                uiCfg.Details.DetailsColor,
+                TextAnchor.MiddleLeft,
+                "0.5 0",
+                "1 1",
+                "0 -25",
+                $"{uiCfg.Details.RightColumnOffsetMaxX} 0"
             );
 
             CuiHelper.AddUi(player, container);
         }
 
         // CHANGE: Добавление постоянной фоновой панели контента в контейнер
+        // CHANGE: отрисовка переведена на общие CUI-хелперы (сокращение объёма)
         private void AddContentBase(CuiElementContainer container, BasePlayer player)
         {
             var contentCfg = _config.Content;
             int halfW = contentCfg.Panel.Width / 2;
             int halfH = contentCfg.Panel.Height / 2;
 
-            container.Add(
-                new CuiPanel
-                {
-                    Image = { Color = contentCfg.BackgroundColor },
-                    RectTransform =
-                    {
-                        AnchorMin = "0.5 0.5",
-                        AnchorMax = "0.5 0.5",
-                        OffsetMin =
-                            $"{contentCfg.Panel.OffsetX - halfW} {contentCfg.Panel.OffsetY - halfH}",
-                        OffsetMax =
-                            $"{contentCfg.Panel.OffsetX + halfW} {contentCfg.Panel.OffsetY + halfH}",
-                    },
-                },
+            AddPanel(
+                container,
                 LayerMain,
-                LayerContent
+                LayerContent,
+                contentCfg.BackgroundColor,
+                "0.5 0.5",
+                "0.5 0.5",
+                $"{contentCfg.Panel.OffsetX - halfW} {contentCfg.Panel.OffsetY - halfH}",
+                $"{contentCfg.Panel.OffsetX + halfW} {contentCfg.Panel.OffsetY + halfH}"
             );
         }
 
@@ -3583,22 +3578,16 @@ namespace Oxide.Plugins
 
         // CHANGE: Добавление прозрачного каркаса тела контента без динамического содержимого —
         // используется в RenderFullMenu, наполнение выполняется отдельным батчем через RenderContent
+        // CHANGE: отрисовка переведена на общие CUI-хелперы (сокращение объёма)
         private void AddContentBodySkeleton(CuiElementContainer container)
         {
-            container.Add(
-                new CuiPanel
-                {
-                    Image = { Color = "0 0 0 0" },
-                    RectTransform =
-                    {
-                        AnchorMin = "0 0",
-                        AnchorMax = "1 1",
-                        OffsetMin = "0 0",
-                        OffsetMax = "0 0",
-                    },
-                },
+            AddPanel(
+                container,
                 LayerContent,
-                LayerContentBody
+                LayerContentBody,
+                "0 0 0 0",
+                "0 0",
+                "1 1"
             );
         }
 
@@ -3806,14 +3795,6 @@ namespace Oxide.Plugins
                         "radminmenu.qm clear_inv",
                         qmCfg.ActionsCard.ClearInvButtonColor
                     ),
-                    // CHANGE: Кнопка креатив-режима перенесена в Быстрое меню админа (переключает креатив для самого админа)
-                    (
-                        Msg("QM_CREATIVE", player.UserIDString),
-                        "radminmenu.qm creative",
-                        _creativePlayers.Contains(player.userID)
-                            ? qmCfg.ActionsCard.CreativeActiveButtonColor
-                            : qmCfg.ActionsCard.CreativeButtonColor
-                    ),
                 },
                 curCardTop
             );
@@ -3883,6 +3864,7 @@ namespace Oxide.Plugins
         }
 
         // CHANGE: Кнопки карточки — один ряд в горизонтальном ScrollView (перенос на вторую строку удалён)
+        // CHANGE: отрисовка переведена на общие CUI-хелперы (сокращение объёма)
         private void RenderQuickMenuStandardCard(
             CuiElementContainer container,
             BasePlayer player,
@@ -3911,44 +3893,31 @@ namespace Oxide.Plugins
             const int sidePadding = 16;
             int btnHalfH = btnHeight / 2;
 
-            container.Add(
-                new CuiPanel
-                {
-                    Image = { Color = bgColor },
-                    RectTransform =
-                    {
-                        AnchorMin = "0.5 1",
-                        AnchorMax = "0.5 1",
-                        OffsetMin = $"{panel.OffsetX - cardHalfW} {-cardTop - panel.Height}",
-                        OffsetMax = $"{panel.OffsetX + cardHalfW} {-cardTop}",
-                    },
-                },
+            AddPanel(
+                container,
                 "QuickMenu_Scroll",
-                cardName
+                cardName,
+                bgColor,
+                "0.5 1",
+                "0.5 1",
+                $"{panel.OffsetX - cardHalfW} {-cardTop - panel.Height}",
+                $"{panel.OffsetX + cardHalfW} {-cardTop}"
             );
 
             // Заголовок карточки
-            container.Add(
-                new CuiLabel
-                {
-                    Text =
-                    {
-                        Text = titleText,
-                        FontSize = titleFontSize,
-                        Font = "robotocondensed-bold.ttf",
-                        Align = TextAnchor.MiddleLeft,
-                        Color = titleColor,
-                    },
-                    RectTransform =
-                    {
-                        AnchorMin = "0 0.5",
-                        AnchorMax = "0 0.5",
-                        OffsetMin = $"{titleOffsetX} {titleOffsetY - titleHalfH}",
-                        OffsetMax = $"{titleOffsetX + titleWidth} {titleOffsetY + titleHalfH}",
-                    },
-                },
+            AddLabel(
+                container,
                 cardName,
-                $"{cardName}_Title"
+                $"{cardName}_Title",
+                titleText,
+                titleFontSize,
+                "robotocondensed-bold.ttf",
+                titleColor,
+                TextAnchor.MiddleLeft,
+                "0 0.5",
+                "0 0.5",
+                $"{titleOffsetX} {titleOffsetY - titleHalfH}",
+                $"{titleOffsetX + titleWidth} {titleOffsetY + titleHalfH}"
             );
 
             // CHANGE: Горизонтальный скролл ряда кнопок — все кнопки в одну строку конфиговой ширины,
@@ -3996,34 +3965,28 @@ namespace Oxide.Plugins
                 var btn = buttons[i];
                 int btnX = i * (btnWidth + btnSpacingX);
 
-                container.Add(
-                    new CuiButton
-                    {
-                        Button = { Command = btn.cmd, Color = btn.color },
-                        RectTransform =
-                        {
-                            AnchorMin = "0 0.5",
-                            AnchorMax = "0 0.5",
-                            OffsetMin = $"{btnX} {-btnHalfH}",
-                            OffsetMax = $"{btnX + btnWidth} {btnHalfH}",
-                        },
-                        Text =
-                        {
-                            Text = btn.label,
-                            Align = TextAnchor.MiddleCenter,
-                            FontSize = btnFontSize,
-                            Font = "robotocondensed-bold.ttf",
-                            Color = btnTextColor,
-                        },
-                    },
+                AddButton(
+                    container,
                     scrollName,
-                    $"{cardName}_Btn_{i}"
+                    $"{cardName}_Btn_{i}",
+                    btn.cmd,
+                    btn.color,
+                    "0 0.5",
+                    "0 0.5",
+                    $"{btnX} {-btnHalfH}",
+                    $"{btnX + btnWidth} {btnHalfH}",
+                    btn.label,
+                    btnFontSize,
+                    "robotocondensed-bold.ttf",
+                    btnTextColor,
+                    TextAnchor.MiddleCenter
                 );
             }
         }
 
         // CHANGE: Точечное обновление кнопки стандартной карточки Быстрого меню без пересоздания ScrollView —
         // сохраняет позицию скролла при кликах (кнопки лежат в горизонтальном скролле ряда, геометрия идентична RenderQuickMenuStandardCard)
+        // CHANGE: отрисовка переведена на общие CUI-хелперы (сокращение объёма)
         private void RefreshQuickMenuCardButton(
             BasePlayer player,
             string cardName,
@@ -4043,33 +4006,27 @@ namespace Oxide.Plugins
 
             CuiHelper.DestroyUi(player, $"{cardName}_Btn_{buttonIndex}");
             var container = new CuiElementContainer();
-            container.Add(
-                new CuiButton
-                {
-                    Button = { Command = cmd, Color = color },
-                    RectTransform =
-                    {
-                        AnchorMin = "0 0.5",
-                        AnchorMax = "0 0.5",
-                        OffsetMin = $"{btnX} {-btnHalfH}",
-                        OffsetMax = $"{btnX + btnWidth} {btnHalfH}",
-                    },
-                    Text =
-                    {
-                        Text = label,
-                        Align = TextAnchor.MiddleCenter,
-                        FontSize = btnFontSize,
-                        Font = "robotocondensed-bold.ttf",
-                        Color = btnTextColor,
-                    },
-                },
+            AddButton(
+                container,
                 $"{cardName}_BtnScroll",
-                $"{cardName}_Btn_{buttonIndex}"
+                $"{cardName}_Btn_{buttonIndex}",
+                cmd,
+                color,
+                "0 0.5",
+                "0 0.5",
+                $"{btnX} {-btnHalfH}",
+                $"{btnX + btnWidth} {btnHalfH}",
+                label,
+                btnFontSize,
+                "robotocondensed-bold.ttf",
+                btnTextColor,
+                TextAnchor.MiddleCenter
             );
             CuiHelper.AddUi(player, container);
         }
 
         // CHANGE: Отрисовка карточки времени суток с динамическим тикером и одинаковыми с другими карточками габаритами
+        // CHANGE: отрисовка переведена на общие CUI-хелперы (сокращение объёма)
         private void RenderQuickMenuTimeCard(
             CuiElementContainer container,
             BasePlayer player,
@@ -4082,48 +4039,32 @@ namespace Oxide.Plugins
 
             int cardHalfW = timeCfg.Panel.Width / 2;
 
-            container.Add(
-                new CuiPanel
-                {
-                    Image = { Color = timeCfg.BackgroundColor },
-                    RectTransform =
-                    {
-                        AnchorMin = "0.5 1",
-                        AnchorMax = "0.5 1",
-                        OffsetMin =
-                            $"{timeCfg.Panel.OffsetX - cardHalfW} {-cardTop - timeCfg.Panel.Height}",
-                        OffsetMax =
-                            $"{timeCfg.Panel.OffsetX + cardHalfW} {-cardTop}",
-                    },
-                },
+            AddPanel(
+                container,
                 "QuickMenu_Scroll",
-                cardName
+                cardName,
+                timeCfg.BackgroundColor,
+                "0.5 1",
+                "0.5 1",
+                $"{timeCfg.Panel.OffsetX - cardHalfW} {-cardTop - timeCfg.Panel.Height}",
+                $"{timeCfg.Panel.OffsetX + cardHalfW} {-cardTop}"
             );
 
             // Заголовок карточки
             int titleHalfH = timeCfg.TitleHeight / 2;
-            container.Add(
-                new CuiLabel
-                {
-                    Text =
-                    {
-                        Text = Msg("QM_GROUP_TIME", player.UserIDString),
-                        FontSize = timeCfg.TitleFontSize,
-                        Font = "robotocondensed-bold.ttf",
-                        Align = TextAnchor.MiddleLeft,
-                        Color = timeCfg.TitleColor,
-                    },
-                    RectTransform =
-                    {
-                        AnchorMin = "0 0.5",
-                        AnchorMax = "0 0.5",
-                        OffsetMin = $"{timeCfg.TitleOffsetX} {timeCfg.TitleOffsetY - titleHalfH}",
-                        OffsetMax =
-                            $"{timeCfg.TitleOffsetX + timeCfg.TitleWidth} {timeCfg.TitleOffsetY + titleHalfH}",
-                    },
-                },
+            AddLabel(
+                container,
                 cardName,
-                "QM_Time_Title"
+                "QM_Time_Title",
+                Msg("QM_GROUP_TIME", player.UserIDString),
+                timeCfg.TitleFontSize,
+                "robotocondensed-bold.ttf",
+                timeCfg.TitleColor,
+                TextAnchor.MiddleLeft,
+                "0 0.5",
+                "0 0.5",
+                $"{timeCfg.TitleOffsetX} {timeCfg.TitleOffsetY - titleHalfH}",
+                $"{timeCfg.TitleOffsetX + timeCfg.TitleWidth} {timeCfg.TitleOffsetY + titleHalfH}"
             );
 
             // Текущее серверное время (обновляется в реальном времени каждую секунду)
@@ -4131,32 +4072,22 @@ namespace Oxide.Plugins
             string formattedCurrentTime = FormatTimeHours(curServerTime);
             int curTimeHalfH = timeCfg.CurrentTime.Height / 2;
 
-            container.Add(
-                new CuiLabel
-                {
-                    Text =
-                    {
-                        Text = string.Format(
-                            Msg("QM_TIME_CURRENT", player.UserIDString),
-                            formattedCurrentTime
-                        ),
-                        FontSize = timeCfg.CurrentTime.FontSize,
-                        Font = "robotocondensed-bold.ttf",
-                        Align = TextAnchor.MiddleRight,
-                        Color = timeCfg.CurrentTime.TextColor,
-                    },
-                    RectTransform =
-                    {
-                        AnchorMin = "1 0.5",
-                        AnchorMax = "1 0.5",
-                        OffsetMin =
-                            $"{timeCfg.CurrentTime.OffsetX - timeCfg.CurrentTime.Width} {timeCfg.CurrentTime.OffsetY - curTimeHalfH}",
-                        OffsetMax =
-                            $"{timeCfg.CurrentTime.OffsetX} {timeCfg.CurrentTime.OffsetY + curTimeHalfH}",
-                    },
-                },
+            AddLabel(
+                container,
                 cardName,
-                "QM_Time_Current"
+                "QM_Time_Current",
+                string.Format(
+                    Msg("QM_TIME_CURRENT", player.UserIDString),
+                    formattedCurrentTime
+                ),
+                timeCfg.CurrentTime.FontSize,
+                "robotocondensed-bold.ttf",
+                timeCfg.CurrentTime.TextColor,
+                TextAnchor.MiddleRight,
+                "1 0.5",
+                "1 0.5",
+                $"{timeCfg.CurrentTime.OffsetX - timeCfg.CurrentTime.Width} {timeCfg.CurrentTime.OffsetY - curTimeHalfH}",
+                $"{timeCfg.CurrentTime.OffsetX} {timeCfg.CurrentTime.OffsetY + curTimeHalfH}"
             );
 
             // Кнопка День (12:00) на позиции первой колонки
@@ -4165,62 +4096,40 @@ namespace Oxide.Plugins
             int stepX = timeCfg.Presets.Width + timeCfg.Presets.SpacingX;
             int col0X = -stepX;
 
-            container.Add(
-                new CuiButton
-                {
-                    Button =
-                    {
-                        Command = "radminmenu.qm time_day",
-                        Color = timeCfg.Presets.BackgroundColor,
-                    },
-                    RectTransform =
-                    {
-                        AnchorMin = "0.5 0.5",
-                        AnchorMax = "0.5 0.5",
-                        OffsetMin = $"{col0X - btnHalfW} {timeCfg.Presets.OffsetY - btnHalfH}",
-                        OffsetMax = $"{col0X + btnHalfW} {timeCfg.Presets.OffsetY + btnHalfH}",
-                    },
-                    Text =
-                    {
-                        Text = Msg("QM_TIME_DAY", player.UserIDString),
-                        Align = TextAnchor.MiddleCenter,
-                        FontSize = timeCfg.Presets.FontSize,
-                        Font = "robotocondensed-bold.ttf",
-                        Color = timeCfg.Presets.TextColor,
-                    },
-                },
+            AddButton(
+                container,
                 cardName,
-                "QM_Time_PresetDay"
+                "QM_Time_PresetDay",
+                "radminmenu.qm time_day",
+                timeCfg.Presets.BackgroundColor,
+                "0.5 0.5",
+                "0.5 0.5",
+                $"{col0X - btnHalfW} {timeCfg.Presets.OffsetY - btnHalfH}",
+                $"{col0X + btnHalfW} {timeCfg.Presets.OffsetY + btnHalfH}",
+                Msg("QM_TIME_DAY", player.UserIDString),
+                timeCfg.Presets.FontSize,
+                "robotocondensed-bold.ttf",
+                timeCfg.Presets.TextColor,
+                TextAnchor.MiddleCenter
             );
 
             // Кнопка Ночь (00:00) на позиции второй колонки
             int col1X = 0;
-            container.Add(
-                new CuiButton
-                {
-                    Button =
-                    {
-                        Command = "radminmenu.qm time_night",
-                        Color = timeCfg.Presets.BackgroundColor,
-                    },
-                    RectTransform =
-                    {
-                        AnchorMin = "0.5 0.5",
-                        AnchorMax = "0.5 0.5",
-                        OffsetMin = $"{col1X - btnHalfW} {timeCfg.Presets.OffsetY - btnHalfH}",
-                        OffsetMax = $"{col1X + btnHalfW} {timeCfg.Presets.OffsetY + btnHalfH}",
-                    },
-                    Text =
-                    {
-                        Text = Msg("QM_TIME_NIGHT", player.UserIDString),
-                        Align = TextAnchor.MiddleCenter,
-                        FontSize = timeCfg.Presets.FontSize,
-                        Font = "robotocondensed-bold.ttf",
-                        Color = timeCfg.Presets.TextColor,
-                    },
-                },
+            AddButton(
+                container,
                 cardName,
-                "QM_Time_PresetNight"
+                "QM_Time_PresetNight",
+                "radminmenu.qm time_night",
+                timeCfg.Presets.BackgroundColor,
+                "0.5 0.5",
+                "0.5 0.5",
+                $"{col1X - btnHalfW} {timeCfg.Presets.OffsetY - btnHalfH}",
+                $"{col1X + btnHalfW} {timeCfg.Presets.OffsetY + btnHalfH}",
+                Msg("QM_TIME_NIGHT", player.UserIDString),
+                timeCfg.Presets.FontSize,
+                "robotocondensed-bold.ttf",
+                timeCfg.Presets.TextColor,
+                TextAnchor.MiddleCenter
             );
 
             // CHANGE: Блок ввода вынесен в AddQuickMenuTimeInput — та же геометрия используется при
@@ -4235,40 +4144,28 @@ namespace Oxide.Plugins
             int applyHalfW = timeCfg.ApplyButton.Width / 2;
             int applyHalfH = timeCfg.ApplyButton.Height / 2;
 
-            container.Add(
-                new CuiButton
-                {
-                    Button =
-                    {
-                        Command = "radminmenu.qm_time_apply",
-                        Color = timeCfg.ApplyButton.BackgroundColor,
-                    },
-                    RectTransform =
-                    {
-                        AnchorMin = "0.5 0.5",
-                        AnchorMax = "0.5 0.5",
-                        OffsetMin =
-                            $"{applyCenterX - applyHalfW} {timeCfg.Presets.OffsetY - applyHalfH}",
-                        OffsetMax =
-                            $"{applyCenterX + applyHalfW} {timeCfg.Presets.OffsetY + applyHalfH}",
-                    },
-                    Text =
-                    {
-                        Text = Msg("QM_TIME_APPLY", player.UserIDString),
-                        Align = TextAnchor.MiddleCenter,
-                        FontSize = timeCfg.ApplyButton.FontSize,
-                        Font = "robotocondensed-bold.ttf",
-                        Color = timeCfg.ApplyButton.TextColor,
-                    },
-                },
+            AddButton(
+                container,
                 cardName,
-                "QM_Time_Apply"
+                "QM_Time_Apply",
+                "radminmenu.qm_time_apply",
+                timeCfg.ApplyButton.BackgroundColor,
+                "0.5 0.5",
+                "0.5 0.5",
+                $"{applyCenterX - applyHalfW} {timeCfg.Presets.OffsetY - applyHalfH}",
+                $"{applyCenterX + applyHalfW} {timeCfg.Presets.OffsetY + applyHalfH}",
+                Msg("QM_TIME_APPLY", player.UserIDString),
+                timeCfg.ApplyButton.FontSize,
+                "robotocondensed-bold.ttf",
+                timeCfg.ApplyButton.TextColor,
+                TextAnchor.MiddleCenter
             );
         }
 
         // CHANGE: Блок ввода времени вынесен из RenderQuickMenuTimeCard — единственный источник геометрии
         // для полной отрисовки и точечного обновления (инвариант: координаты совпадают пиксель в пиксель).
         // Возвращает inputStartX — левую границу блока ввода, от которой позиционируется кнопка "Применить"
+        // CHANGE: отрисовка переведена на общие CUI-хелперы (сокращение объёма)
         private int AddQuickMenuTimeInput(
             CuiElementContainer container,
             BasePlayer player,
@@ -4286,22 +4183,15 @@ namespace Oxide.Plugins
             int inputHalfH = timeCfg.Input.Height / 2;
             string inputPanelLayer = "QM_Time_Input_Bg";
 
-            container.Add(
-                new CuiPanel
-                {
-                    Image = { Color = timeCfg.Input.BackgroundColor },
-                    RectTransform =
-                    {
-                        AnchorMin = "0.5 0.5",
-                        AnchorMax = "0.5 0.5",
-                        OffsetMin =
-                            $"{inputCenterX - inputHalfW} {timeCfg.Presets.OffsetY - inputHalfH}",
-                        OffsetMax =
-                            $"{inputCenterX + inputHalfW} {timeCfg.Presets.OffsetY + inputHalfH}",
-                    },
-                },
+            AddPanel(
+                container,
                 "QM_TimePanel",
-                inputPanelLayer
+                inputPanelLayer,
+                timeCfg.Input.BackgroundColor,
+                "0.5 0.5",
+                "0.5 0.5",
+                $"{inputCenterX - inputHalfW} {timeCfg.Presets.OffsetY - inputHalfH}",
+                $"{inputCenterX + inputHalfW} {timeCfg.Presets.OffsetY + inputHalfH}"
             );
 
             // CHANGE: Интерактивный плейсхолдер времени: исчезает при клике и переходе в режим ввода
@@ -4310,32 +4200,21 @@ namespace Oxide.Plugins
 
             if (showTimePlaceholder)
             {
-                container.Add(
-                    new CuiButton
-                    {
-                        Button =
-                        {
-                            Command = "radminmenu.focus time_input",
-                            Color = "0 0 0 0",
-                        },
-                        RectTransform =
-                        {
-                            AnchorMin = "0 0",
-                            AnchorMax = "1 1",
-                            OffsetMin = $"{timeCfg.Input.PaddingX} {timeCfg.Input.PaddingY}",
-                            OffsetMax = $"{-timeCfg.Input.PaddingX} {-timeCfg.Input.PaddingY}",
-                        },
-                        Text =
-                        {
-                            Text = Msg("QM_TIME_PLACEHOLDER", player.UserIDString),
-                            FontSize = timeCfg.Input.FontSize,
-                            Font = "robotocondensed-regular.ttf",
-                            Align = TextAnchor.MiddleCenter,
-                            Color = timeCfg.Input.PlaceholderColor,
-                        },
-                    },
+                AddButton(
+                    container,
                     inputPanelLayer,
-                    "QM_Time_PlaceholderBtn"
+                    "QM_Time_PlaceholderBtn",
+                    "radminmenu.focus time_input",
+                    "0 0 0 0",
+                    "0 0",
+                    "1 1",
+                    $"{timeCfg.Input.PaddingX} {timeCfg.Input.PaddingY}",
+                    $"{-timeCfg.Input.PaddingX} {-timeCfg.Input.PaddingY}",
+                    Msg("QM_TIME_PLACEHOLDER", player.UserIDString),
+                    timeCfg.Input.FontSize,
+                    "robotocondensed-regular.ttf",
+                    timeCfg.Input.PlaceholderColor,
+                    TextAnchor.MiddleCenter
                 );
             }
             else
@@ -4398,6 +4277,7 @@ namespace Oxide.Plugins
         }
 
         // CHANGE: Отрисовка карточки управления погодой со всеми кнопками быстрых пресетов и переходом в детальные настройки
+        // CHANGE: отрисовка переведена на общие CUI-хелперы (сокращение объёма)
         private void RenderQuickMenuWeatherCard(
             CuiElementContainer container,
             BasePlayer player,
@@ -4410,80 +4290,51 @@ namespace Oxide.Plugins
 
             int cardHalfW = weatherCfg.Panel.Width / 2;
 
-            container.Add(
-                new CuiPanel
-                {
-                    Image = { Color = weatherCfg.BackgroundColor },
-                    RectTransform =
-                    {
-                        AnchorMin = "0.5 1",
-                        AnchorMax = "0.5 1",
-                        OffsetMin =
-                            $"{weatherCfg.Panel.OffsetX - cardHalfW} {-cardTop - weatherCfg.Panel.Height}",
-                        OffsetMax =
-                            $"{weatherCfg.Panel.OffsetX + cardHalfW} {-cardTop}",
-                    },
-                },
+            AddPanel(
+                container,
                 "QuickMenu_Scroll",
-                cardName
+                cardName,
+                weatherCfg.BackgroundColor,
+                "0.5 1",
+                "0.5 1",
+                $"{weatherCfg.Panel.OffsetX - cardHalfW} {-cardTop - weatherCfg.Panel.Height}",
+                $"{weatherCfg.Panel.OffsetX + cardHalfW} {-cardTop}"
             );
 
             // Заголовок карточки
             int titleHalfH = weatherCfg.TitleHeight / 2;
-            container.Add(
-                new CuiLabel
-                {
-                    Text =
-                    {
-                        Text = Msg("QM_GROUP_WEATHER", player.UserIDString),
-                        FontSize = weatherCfg.TitleFontSize,
-                        Font = "robotocondensed-bold.ttf",
-                        Align = TextAnchor.MiddleLeft,
-                        Color = weatherCfg.TitleColor,
-                    },
-                    RectTransform =
-                    {
-                        AnchorMin = "0 0.5",
-                        AnchorMax = "0 0.5",
-                        OffsetMin = $"{weatherCfg.TitleOffsetX} {weatherCfg.TitleOffsetY - titleHalfH}",
-                        OffsetMax =
-                            $"{weatherCfg.TitleOffsetX + weatherCfg.TitleWidth} {weatherCfg.TitleOffsetY + titleHalfH}",
-                    },
-                },
+            AddLabel(
+                container,
                 cardName,
-                "QM_Weather_Title"
+                "QM_Weather_Title",
+                Msg("QM_GROUP_WEATHER", player.UserIDString),
+                weatherCfg.TitleFontSize,
+                "robotocondensed-bold.ttf",
+                weatherCfg.TitleColor,
+                TextAnchor.MiddleLeft,
+                "0 0.5",
+                "0 0.5",
+                $"{weatherCfg.TitleOffsetX} {weatherCfg.TitleOffsetY - titleHalfH}",
+                $"{weatherCfg.TitleOffsetX + weatherCfg.TitleWidth} {weatherCfg.TitleOffsetY + titleHalfH}"
             );
 
             // Кнопка детальных настроек (⚙ НАСТРОЙКИ)
             int detailHalfH = weatherCfg.DetailButton.Height / 2;
-            container.Add(
-                new CuiButton
-                {
-                    Button =
-                    {
-                        Command = "radminmenu.nav weather",
-                        Color = weatherCfg.DetailButton.BackgroundColor,
-                    },
-                    RectTransform =
-                    {
-                        AnchorMin = "1 0.5",
-                        AnchorMax = "1 0.5",
-                        OffsetMin =
-                            $"{weatherCfg.DetailButton.OffsetX - weatherCfg.DetailButton.Width} {weatherCfg.DetailButton.OffsetY - detailHalfH}",
-                        OffsetMax =
-                            $"{weatherCfg.DetailButton.OffsetX} {weatherCfg.DetailButton.OffsetY + detailHalfH}",
-                    },
-                    Text =
-                    {
-                        Text = Msg("QM_WEATHER_DETAILS", player.UserIDString),
-                        Align = TextAnchor.MiddleCenter,
-                        FontSize = weatherCfg.DetailButton.FontSize,
-                        Font = "robotocondensed-bold.ttf",
-                        Color = weatherCfg.DetailButton.TextColor,
-                    },
-                },
+            AddButton(
+                container,
                 cardName,
-                "QM_Weather_DetailBtn"
+                "QM_Weather_DetailBtn",
+                "radminmenu.nav weather",
+                weatherCfg.DetailButton.BackgroundColor,
+                "1 0.5",
+                "1 0.5",
+                $"{weatherCfg.DetailButton.OffsetX - weatherCfg.DetailButton.Width} {weatherCfg.DetailButton.OffsetY - detailHalfH}",
+                $"{weatherCfg.DetailButton.OffsetX} {weatherCfg.DetailButton.OffsetY + detailHalfH}",
+                Msg("QM_WEATHER_DETAILS", player.UserIDString),
+                weatherCfg.DetailButton.FontSize,
+                "robotocondensed-bold.ttf",
+                weatherCfg.DetailButton.TextColor,
+                TextAnchor.MiddleCenter
             );
 
             // CHANGE: Кнопка "Отчет" удалена из управления погодой; осталось 5 кнопок
@@ -4565,33 +4416,27 @@ namespace Oxide.Plugins
                 var b = btns[i];
                 int btnX = i * (weatherCfg.Buttons.Width + weatherCfg.Buttons.SpacingX);
 
-                container.Add(
-                    new CuiButton
-                    {
-                        Button = { Command = b.cmd, Color = b.color },
-                        RectTransform =
-                        {
-                            AnchorMin = "0 0.5",
-                            AnchorMax = "0 0.5",
-                            OffsetMin = $"{btnX} {-btnHalfH}",
-                            OffsetMax = $"{btnX + weatherCfg.Buttons.Width} {btnHalfH}",
-                        },
-                        Text =
-                        {
-                            Text = b.label,
-                            Align = TextAnchor.MiddleCenter,
-                            FontSize = weatherCfg.Buttons.FontSize,
-                            Font = "robotocondensed-bold.ttf",
-                            Color = weatherCfg.Buttons.TextColor,
-                        },
-                    },
+                AddButton(
+                    container,
                     btnScrollName,
-                    $"{cardName}_Btn_{i}"
+                    $"{cardName}_Btn_{i}",
+                    b.cmd,
+                    b.color,
+                    "0 0.5",
+                    "0 0.5",
+                    $"{btnX} {-btnHalfH}",
+                    $"{btnX + weatherCfg.Buttons.Width} {btnHalfH}",
+                    b.label,
+                    weatherCfg.Buttons.FontSize,
+                    "robotocondensed-bold.ttf",
+                    weatherCfg.Buttons.TextColor,
+                    TextAnchor.MiddleCenter
                 );
             }
         }
 
         // CHANGE: Отрисовка страницы детального управления погодой (WeatherManager)
+        // CHANGE: отрисовка переведена на общие CUI-хелперы (сокращение объёма)
         private void RenderWeatherManagerContent(
             CuiElementContainer container,
             BasePlayer player,
@@ -4615,22 +4460,15 @@ namespace Oxide.Plugins
             int tabsHalfW = wCfg.Tabs.Panel.Width / 2;
             int tabsHalfH = wCfg.Tabs.Panel.Height / 2;
 
-            container.Add(
-                new CuiPanel
-                {
-                    Image = { Color = "0 0 0 0" },
-                    RectTransform =
-                    {
-                        AnchorMin = "0.5 0.5",
-                        AnchorMax = "0.5 0.5",
-                        OffsetMin =
-                            $"{wCfg.Tabs.Panel.OffsetX - tabsHalfW} {wCfg.Tabs.Panel.OffsetY - tabsHalfH}",
-                        OffsetMax =
-                            $"{wCfg.Tabs.Panel.OffsetX + tabsHalfW} {wCfg.Tabs.Panel.OffsetY + tabsHalfH}",
-                    },
-                },
+            AddPanel(
+                container,
                 LayerContentBody,
-                "Weather_Tabs"
+                "Weather_Tabs",
+                "0 0 0 0",
+                "0.5 0.5",
+                "0.5 0.5",
+                $"{wCfg.Tabs.Panel.OffsetX - tabsHalfW} {wCfg.Tabs.Panel.OffsetY - tabsHalfH}",
+                $"{wCfg.Tabs.Panel.OffsetX + tabsHalfW} {wCfg.Tabs.Panel.OffsetY + tabsHalfH}"
             );
 
             int tabStepX = wCfg.Tabs.TabWidth + wCfg.Tabs.TabSpacingX;
@@ -4646,32 +4484,21 @@ namespace Oxide.Plugins
                 string tColor = isTabActive ? wCfg.Tabs.ActiveColor : wCfg.Tabs.InactiveColor;
                 int tabX = startTabX + (i * tabStepX);
 
-                container.Add(
-                    new CuiButton
-                    {
-                        Button =
-                        {
-                            Command = $"radminmenu.weather_tab {t.key}",
-                            Color = tColor,
-                        },
-                        RectTransform =
-                        {
-                            AnchorMin = "0.5 0.5",
-                            AnchorMax = "0.5 0.5",
-                            OffsetMin = $"{tabX - tabHalfW} {-tabHalfH}",
-                            OffsetMax = $"{tabX + tabHalfW} {tabHalfH}",
-                        },
-                        Text =
-                        {
-                            Text = Msg(t.langKey, player.UserIDString),
-                            Align = TextAnchor.MiddleCenter,
-                            FontSize = wCfg.Tabs.FontSize,
-                            Font = "robotocondensed-bold.ttf",
-                            Color = wCfg.Tabs.TextColor,
-                        },
-                    },
+                AddButton(
+                    container,
                     "Weather_Tabs",
-                    $"Weather_Tab_{t.key}"
+                    $"Weather_Tab_{t.key}",
+                    $"radminmenu.weather_tab {t.key}",
+                    tColor,
+                    "0.5 0.5",
+                    "0.5 0.5",
+                    $"{tabX - tabHalfW} {-tabHalfH}",
+                    $"{tabX + tabHalfW} {tabHalfH}",
+                    Msg(t.langKey, player.UserIDString),
+                    wCfg.Tabs.FontSize,
+                    "robotocondensed-bold.ttf",
+                    wCfg.Tabs.TextColor,
+                    TextAnchor.MiddleCenter
                 );
             }
 
@@ -4687,6 +4514,7 @@ namespace Oxide.Plugins
         }
 
         // CHANGE: Отрисовка сетки пресетов погоды 3x3
+        // CHANGE: отрисовка переведена на общие CUI-хелперы (сокращение объёма)
         private void RenderWeatherPresetsGrid(
             CuiElementContainer container,
             BasePlayer player,
@@ -4726,72 +4554,50 @@ namespace Oxide.Plugins
                 int posY = startGridY - (row * stepY);
                 string cardName = $"Weather_Preset_{p.key}";
 
-                container.Add(
-                    new CuiButton
-                    {
-                        Button = { Command = p.cmd, Color = p.bg },
-                        RectTransform =
-                        {
-                            AnchorMin = "0.5 0.5",
-                            AnchorMax = "0.5 0.5",
-                            OffsetMin = $"{posX - cardHalfW} {posY - cardHalfH}",
-                            OffsetMax = $"{posX + cardHalfW} {posY + cardHalfH}",
-                        },
-                        Text = { Text = "" },
-                    },
+                AddElementButton(
+                    container,
                     LayerContentBody,
-                    cardName
+                    cardName,
+                    p.cmd,
+                    p.bg,
+                    "0.5 0.5",
+                    "0.5 0.5",
+                    $"{posX - cardHalfW} {posY - cardHalfH}",
+                    $"{posX + cardHalfW} {posY + cardHalfH}"
                 );
 
                 // Заголовок пресета
-                container.Add(
-                    new CuiLabel
-                    {
-                        Text =
-                        {
-                            Text = Msg(p.titleKey, player.UserIDString),
-                            FontSize = pCfg.TitleFontSize,
-                            Font = "robotocondensed-bold.ttf",
-                            Align = TextAnchor.MiddleCenter,
-                            Color = pCfg.TitleColor,
-                        },
-                        RectTransform =
-                        {
-                            AnchorMin = "0 0.45",
-                            AnchorMax = "1 1",
-                            OffsetMin = "0 0",
-                            OffsetMax = "0 0",
-                        },
-                    },
-                    cardName
+                AddLabel(
+                    container,
+                    cardName,
+                    null,
+                    Msg(p.titleKey, player.UserIDString),
+                    pCfg.TitleFontSize,
+                    "robotocondensed-bold.ttf",
+                    pCfg.TitleColor,
+                    TextAnchor.MiddleCenter,
+                    "0 0.45",
+                    "1 1"
                 );
 
                 // Описание / команда пресета
-                container.Add(
-                    new CuiLabel
-                    {
-                        Text =
-                        {
-                            Text = Msg(p.descKey, player.UserIDString),
-                            FontSize = pCfg.SubtitleFontSize,
-                            Font = "robotocondensed-regular.ttf",
-                            Align = TextAnchor.MiddleCenter,
-                            Color = pCfg.SubtitleColor,
-                        },
-                        RectTransform =
-                        {
-                            AnchorMin = "0 0",
-                            AnchorMax = "1 0.45",
-                            OffsetMin = "0 0",
-                            OffsetMax = "0 0",
-                        },
-                    },
-                    cardName
+                AddLabel(
+                    container,
+                    cardName,
+                    null,
+                    Msg(p.descKey, player.UserIDString),
+                    pCfg.SubtitleFontSize,
+                    "robotocondensed-regular.ttf",
+                    pCfg.SubtitleColor,
+                    TextAnchor.MiddleCenter,
+                    "0 0",
+                    "1 0.45"
                 );
             }
         }
 
         // CHANGE: Отрисовка списка параметров погоды со скроллом, быстрыми кнопками и полями ввода
+        // CHANGE: отрисовка переведена на общие CUI-хелперы (сокращение объёма)
         private void RenderWeatherParametersList(
             CuiElementContainer container,
             BasePlayer player,
@@ -4917,73 +4723,50 @@ namespace Oxide.Plugins
                     weatherPaddingTop + (i * (wCfg.Row.Height + weatherSpacingY));
                 string rowName = $"Weather_Row_{convar}";
 
-                container.Add(
-                    new CuiPanel
-                    {
-                        Image = { Color = wCfg.Row.BackgroundColor },
-                        RectTransform =
-                        {
-                            AnchorMin = "0.5 1",
-                            AnchorMax = "0.5 1",
-                            OffsetMin = $"{-rowHalfW} {-rowTop - wCfg.Row.Height}",
-                            OffsetMax = $"{rowHalfW} {-rowTop}",
-                        },
-                    },
+                AddPanel(
+                    container,
                     "Weather_Scroll",
-                    rowName
+                    rowName,
+                    wCfg.Row.BackgroundColor,
+                    "0.5 1",
+                    "0.5 1",
+                    $"{-rowHalfW} {-rowTop - wCfg.Row.Height}",
+                    $"{rowHalfW} {-rowTop}"
                 );
 
                 // Название параметра
                 string paramTitle = Msg($"PARAM_{convar}", player.UserIDString);
                 int labelHalfH = wCfg.Row.LabelHeight / 2;
-                container.Add(
-                    new CuiLabel
-                    {
-                        Text =
-                        {
-                            Text = !string.IsNullOrEmpty(paramTitle) ? paramTitle : convar,
-                            FontSize = wCfg.Row.TitleFontSize,
-                            Font = "robotocondensed-bold.ttf",
-                            Align = TextAnchor.MiddleLeft,
-                            Color = wCfg.Row.TitleColor,
-                        },
-                        RectTransform =
-                        {
-                            AnchorMin = "0 0.5",
-                            AnchorMax = "0 0.5",
-                            OffsetMin =
-                                $"{wCfg.Row.LabelOffsetX} {wCfg.Row.LabelOffsetY - labelHalfH}",
-                            OffsetMax =
-                                $"{wCfg.Row.LabelOffsetX + wCfg.Row.LabelWidth} {wCfg.Row.LabelOffsetY + labelHalfH}",
-                        },
-                    },
-                    rowName
+                AddLabel(
+                    container,
+                    rowName,
+                    null,
+                    !string.IsNullOrEmpty(paramTitle) ? paramTitle : convar,
+                    wCfg.Row.TitleFontSize,
+                    "robotocondensed-bold.ttf",
+                    wCfg.Row.TitleColor,
+                    TextAnchor.MiddleLeft,
+                    "0 0.5",
+                    "0 0.5",
+                    $"{wCfg.Row.LabelOffsetX} {wCfg.Row.LabelOffsetY - labelHalfH}",
+                    $"{wCfg.Row.LabelOffsetX + wCfg.Row.LabelWidth} {wCfg.Row.LabelOffsetY + labelHalfH}"
                 );
 
                 // ConVar имя
                 int convarHalfH = wCfg.Row.ConVarHeight / 2;
-                container.Add(
-                    new CuiLabel
-                    {
-                        Text =
-                        {
-                            Text = convar,
-                            FontSize = wCfg.Row.ConVarFontSize,
-                            Font = "robotocondensed-regular.ttf",
-                            Align = TextAnchor.MiddleLeft,
-                            Color = wCfg.Row.ConVarColor,
-                        },
-                        RectTransform =
-                        {
-                            AnchorMin = "0 0.5",
-                            AnchorMax = "0 0.5",
-                            OffsetMin =
-                                $"{wCfg.Row.ConVarOffsetX} {wCfg.Row.ConVarOffsetY - convarHalfH}",
-                            OffsetMax =
-                                $"{wCfg.Row.ConVarOffsetX + wCfg.Row.ConVarWidth} {wCfg.Row.ConVarOffsetY + convarHalfH}",
-                        },
-                    },
-                    rowName
+                AddLabel(
+                    container,
+                    rowName,
+                    null,
+                    convar,
+                    wCfg.Row.ConVarFontSize,
+                    "robotocondensed-regular.ttf",
+                    wCfg.Row.ConVarColor,
+                    TextAnchor.MiddleLeft,
+                    "0 0.5",
+                    "0 0.5",
+                    $"{wCfg.Row.ConVarOffsetX} {wCfg.Row.ConVarOffsetY - convarHalfH}",
+                    $"{wCfg.Row.ConVarOffsetX + wCfg.Row.ConVarWidth} {wCfg.Row.ConVarOffsetY + convarHalfH}"
                 );
 
                 // Быстрые кнопки: Авто (-1), 0.0, 0.5, 1.0
@@ -5004,33 +4787,21 @@ namespace Oxide.Plugins
                     var qs = quickSteps[qi];
                     int qX = wCfg.QuickButtons.OffsetX + (qi * qStepX);
 
-                    container.Add(
-                        new CuiButton
-                        {
-                            Button =
-                            {
-                                Command = $"radminmenu.weather_set {convar} {qs.Item2}",
-                                Color = qs.Item3,
-                            },
-                            RectTransform =
-                            {
-                                AnchorMin = "0 0.5",
-                                AnchorMax = "0 0.5",
-                                OffsetMin =
-                                    $"{qX} {wCfg.QuickButtons.OffsetY - qBtnHalfH}",
-                                OffsetMax =
-                                    $"{qX + wCfg.QuickButtons.ButtonWidth} {wCfg.QuickButtons.OffsetY + qBtnHalfH}",
-                            },
-                            Text =
-                            {
-                                Text = qs.Item1,
-                                Align = TextAnchor.MiddleCenter,
-                                FontSize = wCfg.QuickButtons.FontSize,
-                                Font = "robotocondensed-bold.ttf",
-                                Color = wCfg.QuickButtons.TextColor,
-                            },
-                        },
-                        rowName
+                    AddButton(
+                        container,
+                        rowName,
+                        null,
+                        $"radminmenu.weather_set {convar} {qs.Item2}",
+                        qs.Item3,
+                        "0 0.5",
+                        "0 0.5",
+                        $"{qX} {wCfg.QuickButtons.OffsetY - qBtnHalfH}",
+                        $"{qX + wCfg.QuickButtons.ButtonWidth} {wCfg.QuickButtons.OffsetY + qBtnHalfH}",
+                        qs.Item1,
+                        wCfg.QuickButtons.FontSize,
+                        "robotocondensed-bold.ttf",
+                        wCfg.QuickButtons.TextColor,
+                        TextAnchor.MiddleCenter
                     );
                 }
 
@@ -5038,22 +4809,15 @@ namespace Oxide.Plugins
                 int inpHalfH = wCfg.Input.Height / 2;
                 string inputBgLayer = $"{rowName}_InputBg";
 
-                container.Add(
-                    new CuiPanel
-                    {
-                        Image = { Color = wCfg.Input.BackgroundColor },
-                        RectTransform =
-                        {
-                            AnchorMin = "0 0.5",
-                            AnchorMax = "0 0.5",
-                            OffsetMin =
-                                $"{wCfg.Input.OffsetX} {wCfg.Input.OffsetY - inpHalfH}",
-                            OffsetMax =
-                                $"{wCfg.Input.OffsetX + wCfg.Input.Width} {wCfg.Input.OffsetY + inpHalfH}",
-                        },
-                    },
+                AddPanel(
+                    container,
                     rowName,
-                    inputBgLayer
+                    inputBgLayer,
+                    wCfg.Input.BackgroundColor,
+                    "0 0.5",
+                    "0 0.5",
+                    $"{wCfg.Input.OffsetX} {wCfg.Input.OffsetY - inpHalfH}",
+                    $"{wCfg.Input.OffsetX + wCfg.Input.Width} {wCfg.Input.OffsetY + inpHalfH}"
                 );
 
                 string currentValue = session.WeatherInputs.TryGetValue(convar, out string storedVal)
@@ -5091,33 +4855,21 @@ namespace Oxide.Plugins
 
                 // Кнопка Применить
                 int applyHalfH = wCfg.ApplyButton.Height / 2;
-                container.Add(
-                    new CuiButton
-                    {
-                        Button =
-                        {
-                            Command = $"radminmenu.weather_apply {convar}",
-                            Color = wCfg.ApplyButton.BackgroundColor,
-                        },
-                        RectTransform =
-                        {
-                            AnchorMin = "0 0.5",
-                            AnchorMax = "0 0.5",
-                            OffsetMin =
-                                $"{wCfg.ApplyButton.OffsetX} {wCfg.ApplyButton.OffsetY - applyHalfH}",
-                            OffsetMax =
-                                $"{wCfg.ApplyButton.OffsetX + wCfg.ApplyButton.Width} {wCfg.ApplyButton.OffsetY + applyHalfH}",
-                        },
-                        Text =
-                        {
-                            Text = Msg("WEATHER_PARAM_APPLY", player.UserIDString),
-                            Align = TextAnchor.MiddleCenter,
-                            FontSize = wCfg.ApplyButton.FontSize,
-                            Font = "robotocondensed-bold.ttf",
-                            Color = wCfg.ApplyButton.TextColor,
-                        },
-                    },
-                    rowName
+                AddButton(
+                    container,
+                    rowName,
+                    null,
+                    $"radminmenu.weather_apply {convar}",
+                    wCfg.ApplyButton.BackgroundColor,
+                    "0 0.5",
+                    "0 0.5",
+                    $"{wCfg.ApplyButton.OffsetX} {wCfg.ApplyButton.OffsetY - applyHalfH}",
+                    $"{wCfg.ApplyButton.OffsetX + wCfg.ApplyButton.Width} {wCfg.ApplyButton.OffsetY + applyHalfH}",
+                    Msg("WEATHER_PARAM_APPLY", player.UserIDString),
+                    wCfg.ApplyButton.FontSize,
+                    "robotocondensed-bold.ttf",
+                    wCfg.ApplyButton.TextColor,
+                    TextAnchor.MiddleCenter
                 );
             }
         }
@@ -5282,6 +5034,7 @@ namespace Oxide.Plugins
             return BasePlayer.FindSleeping(player.Id) != null;
         }
 
+        // CHANGE: отрисовка переведена на общие CUI-хелперы (сокращение объёма)
         private void RenderPlayerListContent(
             CuiElementContainer container,
             BasePlayer player,
@@ -5314,28 +5067,21 @@ namespace Oxide.Plugins
                 string fColor = isActive ? plCfg.Filters.ActiveColor : plCfg.Filters.InactiveColor;
                 int fx = startFilterX + i * (plCfg.Filters.Width + plCfg.Filters.Spacing);
 
-                container.Add(
-                    new CuiButton
-                    {
-                        Button = { Command = $"radminmenu.pl_filter {fKey}", Color = fColor },
-                        RectTransform =
-                        {
-                            AnchorMin = "0.5 0.5",
-                            AnchorMax = "0.5 0.5",
-                            OffsetMin = $"{fx - filterHalfW} {plCfg.Filters.OffsetY - filterHalfH}",
-                            OffsetMax = $"{fx + filterHalfW} {plCfg.Filters.OffsetY + filterHalfH}",
-                        },
-                        Text =
-                        {
-                            Text = Msg(langKey, player.UserIDString),
-                            Align = TextAnchor.MiddleCenter,
-                            FontSize = plCfg.Filters.FontSize,
-                            Font = "robotocondensed-bold.ttf",
-                            Color = plCfg.Filters.TextColor,
-                        },
-                    },
+                AddButton(
+                    container,
                     LayerContentBody,
-                    $"PlFilter_{fKey}"
+                    $"PlFilter_{fKey}",
+                    $"radminmenu.pl_filter {fKey}",
+                    fColor,
+                    "0.5 0.5",
+                    "0.5 0.5",
+                    $"{fx - filterHalfW} {plCfg.Filters.OffsetY - filterHalfH}",
+                    $"{fx + filterHalfW} {plCfg.Filters.OffsetY + filterHalfH}",
+                    Msg(langKey, player.UserIDString),
+                    plCfg.Filters.FontSize,
+                    "robotocondensed-bold.ttf",
+                    plCfg.Filters.TextColor,
+                    TextAnchor.MiddleCenter
                 );
             }
 
@@ -5343,20 +5089,15 @@ namespace Oxide.Plugins
             int searchHalfW = plCfg.Search.Width / 2;
             int searchHalfH = plCfg.Search.Height / 2;
 
-            container.Add(
-                new CuiPanel
-                {
-                    Image = { Color = plCfg.Search.BackgroundColor },
-                    RectTransform =
-                    {
-                        AnchorMin = "0.5 0.5",
-                        AnchorMax = "0.5 0.5",
-                        OffsetMin = $"{-searchHalfW} {plCfg.Search.OffsetY - searchHalfH}",
-                        OffsetMax = $"{searchHalfW} {plCfg.Search.OffsetY + searchHalfH}",
-                    },
-                },
+            AddPanel(
+                container,
                 LayerContentBody,
-                "PlSearchBg"
+                "PlSearchBg",
+                plCfg.Search.BackgroundColor,
+                "0.5 0.5",
+                "0.5 0.5",
+                $"{-searchHalfW} {plCfg.Search.OffsetY - searchHalfH}",
+                $"{searchHalfW} {plCfg.Search.OffsetY + searchHalfH}"
             );
 
             // CHANGE: Интерактивный плейсхолдер поиска игроков: отображается когда пусто, исчезает по клику
@@ -5365,32 +5106,21 @@ namespace Oxide.Plugins
 
             if (showPlSearchPlaceholder)
             {
-                container.Add(
-                    new CuiButton
-                    {
-                        Button =
-                        {
-                            Command = "radminmenu.focus pl_search",
-                            Color = "0 0 0 0",
-                        },
-                        RectTransform =
-                        {
-                            AnchorMin = "0 0",
-                            AnchorMax = "1 1",
-                            OffsetMin = $"{plCfg.Search.PaddingX} 0",
-                            OffsetMax = $"{-plCfg.Search.PaddingX} 0",
-                        },
-                        Text =
-                        {
-                            Text = Msg("PL_SEARCH_PLACEHOLDER", player.UserIDString),
-                            FontSize = plCfg.Search.FontSize,
-                            Font = "robotocondensed-regular.ttf",
-                            Align = TextAnchor.MiddleLeft,
-                            Color = plCfg.Search.PlaceholderColor,
-                        },
-                    },
+                AddButton(
+                    container,
                     "PlSearchBg",
-                    "PlSearchPlaceholderBtn"
+                    "PlSearchPlaceholderBtn",
+                    "radminmenu.focus pl_search",
+                    "0 0 0 0",
+                    "0 0",
+                    "1 1",
+                    $"{plCfg.Search.PaddingX} 0",
+                    $"{-plCfg.Search.PaddingX} 0",
+                    Msg("PL_SEARCH_PLACEHOLDER", player.UserIDString),
+                    plCfg.Search.FontSize,
+                    "robotocondensed-regular.ttf",
+                    plCfg.Search.PlaceholderColor,
+                    TextAnchor.MiddleLeft
                 );
             }
             else
@@ -5607,48 +5337,33 @@ namespace Oxide.Plugins
 
                 string cardName = $"PlayerCard_{target.Id}";
 
-                container.Add(
-                    new CuiButton
-                    {
-                        Button =
-                        {
-                            Command = $"radminmenu.pl_select {target.Id}",
-                            Color = cardColor,
-                        },
-                        RectTransform =
-                        {
-                            AnchorMin = "0 1",
-                            AnchorMax = "0 1",
-                            OffsetMin = $"{xPos} {-yPos - plCfg.Card.Height}",
-                            OffsetMax = $"{xPos + plCfg.Card.Width} {-yPos}",
-                        },
-                        Text =
-                        {
-                            Text = $"  {target.Name}",
-                            Align = TextAnchor.MiddleLeft,
-                            FontSize = plCfg.Card.FontSize,
-                            Font = "robotocondensed-bold.ttf",
-                            Color = plCfg.Card.TextColor,
-                        },
-                    },
+                AddButton(
+                    container,
                     "PlayerList_Scroll",
-                    cardName
+                    cardName,
+                    $"radminmenu.pl_select {target.Id}",
+                    cardColor,
+                    "0 1",
+                    "0 1",
+                    $"{xPos} {-yPos - plCfg.Card.Height}",
+                    $"{xPos + plCfg.Card.Width} {-yPos}",
+                    $"  {target.Name}",
+                    plCfg.Card.FontSize,
+                    "robotocondensed-bold.ttf",
+                    plCfg.Card.TextColor,
+                    TextAnchor.MiddleLeft
                 );
 
                 // Индикатор онлайн статуса (полоска слева)
-                container.Add(
-                    new CuiPanel
-                    {
-                        Image = { Color = statusColor },
-                        RectTransform =
-                        {
-                            AnchorMin = "0 0",
-                            AnchorMax = "0 1",
-                            OffsetMin = "0 0",
-                            OffsetMax = "3 0",
-                        },
-                    },
-                    cardName
+                AddPanel(
+                    container,
+                    cardName,
+                    null,
+                    statusColor,
+                    "0 0",
+                    "0 1",
+                    "0 0",
+                    "3 0"
                 );
             }
         }
@@ -5657,6 +5372,7 @@ namespace Oxide.Plugins
 
         #region Content Page: User Info
 
+        // CHANGE: отрисовка переведена на общие CUI-хелперы (сокращение объёма)
         private void RenderUserInfoContent(
             CuiElementContainer container,
             BasePlayer player,
@@ -5679,54 +5395,34 @@ namespace Oxide.Plugins
             int backHalfH = uiCfg.BackButton.Height / 2;
 
             // CHANGE: Кнопка возврата к списку с настраиваемой позицией над аватаром
-            container.Add(
-                new CuiButton
-                {
-                    Button =
-                    {
-                        Command = "radminmenu.nav players",
-                        Color = uiCfg.BackButton.BackgroundColor,
-                    },
-                    RectTransform =
-                    {
-                        AnchorMin = "0.5 0.5",
-                        AnchorMax = "0.5 0.5",
-                        OffsetMin =
-                            $"{uiCfg.BackButton.OffsetX - backHalfW} {uiCfg.BackButton.OffsetY - backHalfH}",
-                        OffsetMax =
-                            $"{uiCfg.BackButton.OffsetX + backHalfW} {uiCfg.BackButton.OffsetY + backHalfH}",
-                    },
-                    Text =
-                    {
-                        Text = Msg("UI_BACK", player.UserIDString),
-                        Align = TextAnchor.MiddleCenter,
-                        FontSize = uiCfg.BackButton.FontSize,
-                        Font = "robotocondensed-bold.ttf",
-                        Color = uiCfg.BackButton.TextColor,
-                    },
-                },
+            AddButton(
+                container,
                 LayerContentBody,
-                "UI_BackBtn"
+                "UI_BackBtn",
+                "radminmenu.nav players",
+                uiCfg.BackButton.BackgroundColor,
+                "0.5 0.5",
+                "0.5 0.5",
+                $"{uiCfg.BackButton.OffsetX - backHalfW} {uiCfg.BackButton.OffsetY - backHalfH}",
+                $"{uiCfg.BackButton.OffsetX + backHalfW} {uiCfg.BackButton.OffsetY + backHalfH}",
+                Msg("UI_BACK", player.UserIDString),
+                uiCfg.BackButton.FontSize,
+                "robotocondensed-bold.ttf",
+                uiCfg.BackButton.TextColor,
+                TextAnchor.MiddleCenter
             );
 
             // Аватарка
             int avHalf = uiCfg.Avatar.Size / 2;
-            container.Add(
-                new CuiPanel
-                {
-                    Image = { Color = uiCfg.Avatar.BackgroundColor },
-                    RectTransform =
-                    {
-                        AnchorMin = "0.5 0.5",
-                        AnchorMax = "0.5 0.5",
-                        OffsetMin =
-                            $"{uiCfg.Avatar.OffsetX - avHalf} {uiCfg.Avatar.OffsetY - avHalf}",
-                        OffsetMax =
-                            $"{uiCfg.Avatar.OffsetX + avHalf} {uiCfg.Avatar.OffsetY + avHalf}",
-                    },
-                },
+            AddPanel(
+                container,
                 LayerContentBody,
-                "UI_AvatarBg"
+                "UI_AvatarBg",
+                uiCfg.Avatar.BackgroundColor,
+                "0.5 0.5",
+                "0.5 0.5",
+                $"{uiCfg.Avatar.OffsetX - avHalf} {uiCfg.Avatar.OffsetY - avHalf}",
+                $"{uiCfg.Avatar.OffsetX + avHalf} {uiCfg.Avatar.OffsetY + avHalf}"
             );
 
             if (
@@ -5760,26 +5456,17 @@ namespace Oxide.Plugins
             }
             else
             {
-                container.Add(
-                    new CuiLabel
-                    {
-                        Text =
-                        {
-                            Text = "STEAM\nAVATAR",
-                            Align = TextAnchor.MiddleCenter,
-                            FontSize = 14,
-                            Font = "robotocondensed-bold.ttf",
-                            Color = uiCfg.Details.DetailsColor,
-                        },
-                        RectTransform =
-                        {
-                            AnchorMin = "0 0",
-                            AnchorMax = "1 1",
-                            OffsetMin = "0 0",
-                            OffsetMax = "0 0",
-                        },
-                    },
-                    "UI_AvatarBg"
+                AddLabel(
+                    container,
+                    "UI_AvatarBg",
+                    null,
+                    "STEAM\nAVATAR",
+                    14,
+                    "robotocondensed-bold.ttf",
+                    uiCfg.Details.DetailsColor,
+                    TextAnchor.MiddleCenter,
+                    "0 0",
+                    "1 1"
                 );
 
                 if (
@@ -5806,45 +5493,31 @@ namespace Oxide.Plugins
             int infoHalfW = uiCfg.Details.Width / 2;
             int infoHalfH = uiCfg.Details.Height / 2;
 
-            container.Add(
-                new CuiPanel
-                {
-                    Image = { Color = uiCfg.Details.BackgroundColor },
-                    RectTransform =
-                    {
-                        AnchorMin = "0.5 0.5",
-                        AnchorMax = "0.5 0.5",
-                        OffsetMin =
-                            $"{uiCfg.Details.OffsetX - infoHalfW} {uiCfg.Details.OffsetY - infoHalfH}",
-                        OffsetMax =
-                            $"{uiCfg.Details.OffsetX + infoHalfW} {uiCfg.Details.OffsetY + infoHalfH}",
-                    },
-                },
+            AddPanel(
+                container,
                 LayerContentBody,
-                "UI_InfoPanel"
+                "UI_InfoPanel",
+                uiCfg.Details.BackgroundColor,
+                "0.5 0.5",
+                "0.5 0.5",
+                $"{uiCfg.Details.OffsetX - infoHalfW} {uiCfg.Details.OffsetY - infoHalfH}",
+                $"{uiCfg.Details.OffsetX + infoHalfW} {uiCfg.Details.OffsetY + infoHalfH}"
             );
 
             // Имя и SteamID
-            container.Add(
-                new CuiLabel
-                {
-                    Text =
-                    {
-                        Text = $"<b>{target.Name}</b> ({target.Id})",
-                        Align = TextAnchor.UpperLeft,
-                        FontSize = uiCfg.Details.NameFontSize,
-                        Font = "robotocondensed-bold.ttf",
-                        Color = uiCfg.Details.NameColor,
-                    },
-                    RectTransform =
-                    {
-                        AnchorMin = "0 0",
-                        AnchorMax = "1 1",
-                        OffsetMin = $"{uiCfg.Details.LeftColumnOffsetMinX} 0",
-                        OffsetMax = $"{uiCfg.Details.RightColumnOffsetMaxX} -10",
-                    },
-                },
-                "UI_InfoPanel"
+            AddLabel(
+                container,
+                "UI_InfoPanel",
+                null,
+                $"<b>{target.Name}</b> ({target.Id})",
+                uiCfg.Details.NameFontSize,
+                "robotocondensed-bold.ttf",
+                uiCfg.Details.NameColor,
+                TextAnchor.UpperLeft,
+                "0 0",
+                "1 1",
+                $"{uiCfg.Details.LeftColumnOffsetMinX} 0",
+                $"{uiCfg.Details.RightColumnOffsetMaxX} -10"
             );
 
             // Статистика игрока
@@ -5873,27 +5546,18 @@ namespace Oxide.Plugins
             string detailsLeft =
                 $"{Msg("UI_HEALTH", player.UserIDString, (int)hp, (int)maxHp)}\n{Msg("UI_RADIATION", player.UserIDString, (int)rad)}\n{Msg("UI_GRID", player.UserIDString, grid)}\n{ipPing}";
 
-            container.Add(
-                new CuiLabel
-                {
-                    Text =
-                    {
-                        Text = detailsLeft,
-                        Align = TextAnchor.MiddleLeft,
-                        FontSize = uiCfg.Details.DetailsFontSize,
-                        Font = "robotocondensed-regular.ttf",
-                        Color = uiCfg.Details.DetailsColor,
-                    },
-                    RectTransform =
-                    {
-                        AnchorMin = "0 0",
-                        AnchorMax = "0.5 1",
-                        OffsetMin = $"{uiCfg.Details.LeftColumnOffsetMinX} -25",
-                        OffsetMax = "0 0",
-                    },
-                },
+            AddLabel(
+                container,
                 "UI_InfoPanel",
-                "UI_Info_DetailsLeft"
+                "UI_Info_DetailsLeft",
+                detailsLeft,
+                uiCfg.Details.DetailsFontSize,
+                "robotocondensed-regular.ttf",
+                uiCfg.Details.DetailsColor,
+                TextAnchor.MiddleLeft,
+                "0 0",
+                "0.5 1",
+                $"{uiCfg.Details.LeftColumnOffsetMinX} -25"
             );
 
             string detailsRight = "";
@@ -5922,27 +5586,19 @@ namespace Oxide.Plugins
                 detailsRight += Msg("UI_STATUS_OFFLINE", player.UserIDString) + "\n";
             }
 
-            container.Add(
-                new CuiLabel
-                {
-                    Text =
-                    {
-                        Text = detailsRight,
-                        Align = TextAnchor.MiddleLeft,
-                        FontSize = uiCfg.Details.DetailsFontSize,
-                        Font = "robotocondensed-regular.ttf",
-                        Color = uiCfg.Details.DetailsColor,
-                    },
-                    RectTransform =
-                    {
-                        AnchorMin = "0.5 0",
-                        AnchorMax = "1 1",
-                        OffsetMin = "0 -25",
-                        OffsetMax = $"{uiCfg.Details.RightColumnOffsetMaxX} 0",
-                    },
-                },
+            AddLabel(
+                container,
                 "UI_InfoPanel",
-                "UI_Info_DetailsRight"
+                "UI_Info_DetailsRight",
+                detailsRight,
+                uiCfg.Details.DetailsFontSize,
+                "robotocondensed-regular.ttf",
+                uiCfg.Details.DetailsColor,
+                TextAnchor.MiddleLeft,
+                "0.5 0",
+                "1 1",
+                "0 -25",
+                $"{uiCfg.Details.RightColumnOffsetMaxX} 0"
             );
 
             // CHANGE: Кнопки действий над игроком (без наказаний: mute, kick, ban, с кнопкой снятия радиации вместо 50% лечения)
@@ -6011,7 +5667,6 @@ namespace Oxide.Plugins
                     1,
                     2
                 ),
-                // CHANGE: Кнопка креатив-режима перенесена в Быстрое меню самого админа (запрет выдачи креатива другим игрокам)
                 (
                     "cuff",
                     "ACT_CUFF",
@@ -6090,28 +5745,21 @@ namespace Oxide.Plugins
                     uiCfg.Actions.StartY
                     - item.row * (uiCfg.Actions.Height + uiCfg.Actions.SpacingY);
 
-                container.Add(
-                    new CuiButton
-                    {
-                        Button = { Command = item.cmd, Color = item.color },
-                        RectTransform =
-                        {
-                            AnchorMin = "0.5 0.5",
-                            AnchorMax = "0.5 0.5",
-                            OffsetMin = $"{x - actHalfW} {y - actHalfH}",
-                            OffsetMax = $"{x + actHalfW} {y + actHalfH}",
-                        },
-                        Text =
-                        {
-                            Text = Msg(item.langKey, player.UserIDString),
-                            Align = TextAnchor.MiddleCenter,
-                            FontSize = uiCfg.Actions.FontSize,
-                            Font = "robotocondensed-bold.ttf",
-                            Color = uiCfg.Actions.TextColor,
-                        },
-                    },
+                AddButton(
+                    container,
                     LayerContentBody,
-                    $"UI_Act_{item.key}"
+                    $"UI_Act_{item.key}",
+                    item.cmd,
+                    item.color,
+                    "0.5 0.5",
+                    "0.5 0.5",
+                    $"{x - actHalfW} {y - actHalfH}",
+                    $"{x + actHalfW} {y + actHalfH}",
+                    Msg(item.langKey, player.UserIDString),
+                    uiCfg.Actions.FontSize,
+                    "robotocondensed-bold.ttf",
+                    uiCfg.Actions.TextColor,
+                    TextAnchor.MiddleCenter
                 );
             }
         }
@@ -6121,6 +5769,7 @@ namespace Oxide.Plugins
         #region Content Page: Permission Manager
 
         // CHANGE: Страница менеджера прав и групп (двухуровневая навигация, пагинация, поиск, управление группами и игроками)
+        // CHANGE: отрисовка переведена на общие CUI-хелперы (сокращение объёма)
         private void RenderPermissionManagerContent(
             CuiElementContainer container,
             BasePlayer player,
@@ -6152,89 +5801,56 @@ namespace Oxide.Plugins
                 int b3MinX = b2MaxX + gap;
                 int b3MaxX = b3MinX + cgW;
 
-                container.Add(
-                    new CuiButton
-                    {
-                        Button =
-                        {
-                            Command = "radminmenu.perm_mode group",
-                            Color = permCfg.Tabs.ActiveColor,
-                        },
-                        RectTransform =
-                        {
-                            AnchorMin = "0.5 0.5",
-                            AnchorMax = "0.5 0.5",
-                            OffsetMin = $"{b1MinX} {permCfg.Tabs.OffsetY - tabHalfH}",
-                            OffsetMax = $"{b1MaxX} {permCfg.Tabs.OffsetY + tabHalfH}",
-                        },
-                        Text =
-                        {
-                            Text = Msg("PERM_GROUPS", player.UserIDString),
-                            Align = TextAnchor.MiddleCenter,
-                            FontSize = permCfg.Tabs.FontSize,
-                            Font = "robotocondensed-bold.ttf",
-                            Color = permCfg.Tabs.TextColor,
-                        },
-                    },
+                AddButton(
+                    container,
                     LayerContentBody,
-                    "Perm_Tab_Group"
+                    "Perm_Tab_Group",
+                    "radminmenu.perm_mode group",
+                    permCfg.Tabs.ActiveColor,
+                    "0.5 0.5",
+                    "0.5 0.5",
+                    $"{b1MinX} {permCfg.Tabs.OffsetY - tabHalfH}",
+                    $"{b1MaxX} {permCfg.Tabs.OffsetY + tabHalfH}",
+                    Msg("PERM_GROUPS", player.UserIDString),
+                    permCfg.Tabs.FontSize,
+                    "robotocondensed-bold.ttf",
+                    permCfg.Tabs.TextColor,
+                    TextAnchor.MiddleCenter
                 );
 
-                container.Add(
-                    new CuiButton
-                    {
-                        Button =
-                        {
-                            Command = "radminmenu.perm_mode user",
-                            Color = permCfg.Tabs.InactiveColor,
-                        },
-                        RectTransform =
-                        {
-                            AnchorMin = "0.5 0.5",
-                            AnchorMax = "0.5 0.5",
-                            OffsetMin = $"{b2MinX} {permCfg.Tabs.OffsetY - tabHalfH}",
-                            OffsetMax = $"{b2MaxX} {permCfg.Tabs.OffsetY + tabHalfH}",
-                        },
-                        Text =
-                        {
-                            Text = Msg("PERM_USERS", player.UserIDString),
-                            Align = TextAnchor.MiddleCenter,
-                            FontSize = permCfg.Tabs.FontSize,
-                            Font = "robotocondensed-bold.ttf",
-                            Color = permCfg.Tabs.TextColor,
-                        },
-                    },
+                AddButton(
+                    container,
                     LayerContentBody,
-                    "Perm_Tab_User"
+                    "Perm_Tab_User",
+                    "radminmenu.perm_mode user",
+                    permCfg.Tabs.InactiveColor,
+                    "0.5 0.5",
+                    "0.5 0.5",
+                    $"{b2MinX} {permCfg.Tabs.OffsetY - tabHalfH}",
+                    $"{b2MaxX} {permCfg.Tabs.OffsetY + tabHalfH}",
+                    Msg("PERM_USERS", player.UserIDString),
+                    permCfg.Tabs.FontSize,
+                    "robotocondensed-bold.ttf",
+                    permCfg.Tabs.TextColor,
+                    TextAnchor.MiddleCenter
                 );
 
                 // CHANGE: Позиционирование кнопки создания группы с учетом CreateGroupBtnHeight
-                container.Add(
-                    new CuiButton
-                    {
-                        Button =
-                        {
-                            Command = "radminmenu.modal_open creategroup",
-                            Color = permCfg.CreateGroupButton.BackgroundColor,
-                        },
-                        RectTransform =
-                        {
-                            AnchorMin = "0.5 0.5",
-                            AnchorMax = "0.5 0.5",
-                            OffsetMin = $"{b3MinX} {permCfg.Tabs.OffsetY - cgHalfH}",
-                            OffsetMax = $"{b3MaxX} {permCfg.Tabs.OffsetY + cgHalfH}",
-                        },
-                        Text =
-                        {
-                            Text = Msg("PERM_CREATE_GROUP", player.UserIDString),
-                            Align = TextAnchor.MiddleCenter,
-                            FontSize = permCfg.CreateGroupButton.FontSize,
-                            Font = "robotocondensed-bold.ttf",
-                            Color = permCfg.CreateGroupButton.TextColor,
-                        },
-                    },
+                AddButton(
+                    container,
                     LayerContentBody,
-                    "Perm_CreateGroupBtn"
+                    "Perm_CreateGroupBtn",
+                    "radminmenu.modal_open creategroup",
+                    permCfg.CreateGroupButton.BackgroundColor,
+                    "0.5 0.5",
+                    "0.5 0.5",
+                    $"{b3MinX} {permCfg.Tabs.OffsetY - cgHalfH}",
+                    $"{b3MaxX} {permCfg.Tabs.OffsetY + cgHalfH}",
+                    Msg("PERM_CREATE_GROUP", player.UserIDString),
+                    permCfg.CreateGroupButton.FontSize,
+                    "robotocondensed-bold.ttf",
+                    permCfg.CreateGroupButton.TextColor,
+                    TextAnchor.MiddleCenter
                 );
 
                 string[] groups = permission.GetGroups();
@@ -6325,32 +5941,21 @@ namespace Oxide.Plugins
                         ? groupTitle
                         : groupName;
 
-                    container.Add(
-                        new CuiButton
-                        {
-                            Button =
-                            {
-                                Command = $"radminmenu.perm_select_target {groupName}",
-                                Color = btnColor,
-                            },
-                            RectTransform =
-                            {
-                                AnchorMin = "0 0.5",
-                                AnchorMax = "0 0.5",
-                                OffsetMin = $"{gx} {-groupBtnHalfH}",
-                                OffsetMax = $"{gx + permCfg.GroupsBar.Width} {groupBtnHalfH}",
-                            },
-                            Text =
-                            {
-                                Text = displayName,
-                                Align = TextAnchor.MiddleCenter,
-                                FontSize = permCfg.GroupsBar.FontSize,
-                                Font = "robotocondensed-bold.ttf",
-                                Color = permCfg.GroupsBar.TextColor,
-                            },
-                        },
+                    AddButton(
+                        container,
                         "Perm_GroupsScroll",
-                        $"PermGroup_{groupName}"
+                        $"PermGroup_{groupName}",
+                        $"radminmenu.perm_select_target {groupName}",
+                        btnColor,
+                        "0 0.5",
+                        "0 0.5",
+                        $"{gx} {-groupBtnHalfH}",
+                        $"{gx + permCfg.GroupsBar.Width} {groupBtnHalfH}",
+                        displayName,
+                        permCfg.GroupsBar.FontSize,
+                        "robotocondensed-bold.ttf",
+                        permCfg.GroupsBar.TextColor,
+                        TextAnchor.MiddleCenter
                     );
                 }
 
@@ -6361,22 +5966,15 @@ namespace Oxide.Plugins
                     int sHalfW = permCfg.Search.Width / 2;
                     int sHalfH = permCfg.Search.Height / 2;
 
-                    container.Add(
-                        new CuiPanel
-                        {
-                            Image = { Color = permCfg.Search.BackgroundColor },
-                            RectTransform =
-                            {
-                                AnchorMin = "0.5 0.5",
-                                AnchorMax = "0.5 0.5",
-                                OffsetMin =
-                                    $"{permCfg.Search.OffsetX - sHalfW} {permCfg.Search.OffsetY - sHalfH}",
-                                OffsetMax =
-                                    $"{permCfg.Search.OffsetX + sHalfW} {permCfg.Search.OffsetY + sHalfH}",
-                            },
-                        },
+                    AddPanel(
+                        container,
                         LayerContentBody,
-                        "PermSearchBg"
+                        "PermSearchBg",
+                        permCfg.Search.BackgroundColor,
+                        "0.5 0.5",
+                        "0.5 0.5",
+                        $"{permCfg.Search.OffsetX - sHalfW} {permCfg.Search.OffsetY - sHalfH}",
+                        $"{permCfg.Search.OffsetX + sHalfW} {permCfg.Search.OffsetY + sHalfH}"
                     );
 
                     // CHANGE: Интерактивный плейсхолдер поиска прав групп: отображается когда пусто, исчезает по клику
@@ -6386,32 +5984,21 @@ namespace Oxide.Plugins
 
                     if (showPermPlaceholder)
                     {
-                        container.Add(
-                            new CuiButton
-                            {
-                                Button =
-                                {
-                                    Command = "radminmenu.focus perm_search",
-                                    Color = "0 0 0 0",
-                                },
-                                RectTransform =
-                                {
-                                    AnchorMin = "0 0",
-                                    AnchorMax = "1 1",
-                                    OffsetMin = $"{permCfg.Search.PaddingX} 0",
-                                    OffsetMax = $"{-permCfg.Search.PaddingX} 0",
-                                },
-                                Text =
-                                {
-                                    Text = Msg("PERM_SEARCH_PLACEHOLDER", player.UserIDString),
-                                    FontSize = permCfg.Search.FontSize,
-                                    Font = "robotocondensed-regular.ttf",
-                                    Align = TextAnchor.MiddleLeft,
-                                    Color = permCfg.Search.PlaceholderColor,
-                                },
-                            },
+                        AddButton(
+                            container,
                             "PermSearchBg",
-                            "PermSearchPlaceholderBtn"
+                            "PermSearchPlaceholderBtn",
+                            "radminmenu.focus perm_search",
+                            "0 0 0 0",
+                            "0 0",
+                            "1 1",
+                            $"{permCfg.Search.PaddingX} 0",
+                            $"{-permCfg.Search.PaddingX} 0",
+                            Msg("PERM_SEARCH_PLACEHOLDER", player.UserIDString),
+                            permCfg.Search.FontSize,
+                            "robotocondensed-regular.ttf",
+                            permCfg.Search.PlaceholderColor,
+                            TextAnchor.MiddleLeft
                         );
                     }
                     else
@@ -6450,67 +6037,41 @@ namespace Oxide.Plugins
                     int actHalfW = permCfg.GroupActions.Width / 2;
                     int actHalfH = permCfg.GroupActions.Height / 2;
 
-                    container.Add(
-                        new CuiButton
-                        {
-                            Button =
-                            {
-                                Command = "radminmenu.modal_open clonegroup",
-                                Color = permCfg.GroupActions.CloneButtonColor,
-                            },
-                            RectTransform =
-                            {
-                                AnchorMin = "0.5 0.5",
-                                AnchorMax = "0.5 0.5",
-                                OffsetMin =
-                                    $"{permCfg.GroupActions.CloneOffsetX - actHalfW} {permCfg.GroupActions.OffsetY - actHalfH}",
-                                OffsetMax =
-                                    $"{permCfg.GroupActions.CloneOffsetX + actHalfW} {permCfg.GroupActions.OffsetY + actHalfH}",
-                            },
-                            Text =
-                            {
-                                Text = Msg("PERM_CLONE_GROUP", player.UserIDString),
-                                Align = TextAnchor.MiddleCenter,
-                                FontSize = permCfg.GroupActions.FontSize,
-                                Font = "robotocondensed-bold.ttf",
-                                Color = permCfg.GroupActions.TextColor,
-                            },
-                        },
+                    AddButton(
+                        container,
                         LayerContentBody,
-                        "Perm_CloneGroupBtn"
+                        "Perm_CloneGroupBtn",
+                        "radminmenu.modal_open clonegroup",
+                        permCfg.GroupActions.CloneButtonColor,
+                        "0.5 0.5",
+                        "0.5 0.5",
+                        $"{permCfg.GroupActions.CloneOffsetX - actHalfW} {permCfg.GroupActions.OffsetY - actHalfH}",
+                        $"{permCfg.GroupActions.CloneOffsetX + actHalfW} {permCfg.GroupActions.OffsetY + actHalfH}",
+                        Msg("PERM_CLONE_GROUP", player.UserIDString),
+                        permCfg.GroupActions.FontSize,
+                        "robotocondensed-bold.ttf",
+                        permCfg.GroupActions.TextColor,
+                        TextAnchor.MiddleCenter
                     );
 
                     if (session.PermTargetName != "default" && session.PermTargetName != "admin")
                     {
                         // CHANGE: Открытие модального окна подтверждения удаления группы
-                        container.Add(
-                            new CuiButton
-                            {
-                                Button =
-                                {
-                                    Command = "radminmenu.modal_open deletegroup",
-                                    Color = permCfg.GroupActions.DeleteButtonColor,
-                                },
-                                RectTransform =
-                                {
-                                    AnchorMin = "0.5 0.5",
-                                    AnchorMax = "0.5 0.5",
-                                    OffsetMin =
-                                        $"{permCfg.GroupActions.DeleteOffsetX - actHalfW} {permCfg.GroupActions.OffsetY - actHalfH}",
-                                    OffsetMax =
-                                        $"{permCfg.GroupActions.DeleteOffsetX + actHalfW} {permCfg.GroupActions.OffsetY + actHalfH}",
-                                },
-                                Text =
-                                {
-                                    Text = Msg("PERM_REMOVE_GROUP", player.UserIDString),
-                                    Align = TextAnchor.MiddleCenter,
-                                    FontSize = permCfg.GroupActions.FontSize,
-                                    Font = "robotocondensed-bold.ttf",
-                                    Color = permCfg.GroupActions.TextColor,
-                                },
-                            },
+                        AddButton(
+                            container,
                             LayerContentBody,
-                            "Perm_RemoveGroupBtn"
+                            "Perm_RemoveGroupBtn",
+                            "radminmenu.modal_open deletegroup",
+                            permCfg.GroupActions.DeleteButtonColor,
+                            "0.5 0.5",
+                            "0.5 0.5",
+                            $"{permCfg.GroupActions.DeleteOffsetX - actHalfW} {permCfg.GroupActions.OffsetY - actHalfH}",
+                            $"{permCfg.GroupActions.DeleteOffsetX + actHalfW} {permCfg.GroupActions.OffsetY + actHalfH}",
+                            Msg("PERM_REMOVE_GROUP", player.UserIDString),
+                            permCfg.GroupActions.FontSize,
+                            "robotocondensed-bold.ttf",
+                            permCfg.GroupActions.TextColor,
+                            TextAnchor.MiddleCenter
                         );
                     }
 
@@ -6606,54 +6167,34 @@ namespace Oxide.Plugins
                                 : permCfg.UserMode.DetailsColor;
                         string cardElemName = $"PermPlugin_{pName}";
 
-                        container.Add(
-                            new CuiButton
-                            {
-                                Button =
-                                {
-                                    Command = $"radminmenu.perm_select_plugin {pName}",
-                                    Color = cardBgColor,
-                                },
-                                RectTransform =
-                                {
-                                    AnchorMin = "0 1",
-                                    AnchorMax = "0 1",
-                                    OffsetMin = $"{px} {-py - permCfg.PluginGrid.CardHeight}",
-                                    OffsetMax = $"{px + permCfg.PluginGrid.CardWidth} {-py}",
-                                },
-                                Text =
-                                {
-                                    Text = $"  <b>{pName}</b>",
-                                    Align = TextAnchor.MiddleLeft,
-                                    FontSize = permCfg.PluginGrid.FontSize,
-                                    Font = "robotocondensed-bold.ttf",
-                                    Color = permCfg.PluginGrid.TextColor,
-                                },
-                            },
+                        AddButton(
+                            container,
                             "Perm_PluginScroll",
-                            cardElemName
+                            cardElemName,
+                            $"radminmenu.perm_select_plugin {pName}",
+                            cardBgColor,
+                            "0 1",
+                            "0 1",
+                            $"{px} {-py - permCfg.PluginGrid.CardHeight}",
+                            $"{px + permCfg.PluginGrid.CardWidth} {-py}",
+                            $"  <b>{pName}</b>",
+                            permCfg.PluginGrid.FontSize,
+                            "robotocondensed-bold.ttf",
+                            permCfg.PluginGrid.TextColor,
+                            TextAnchor.MiddleLeft
                         );
 
-                        container.Add(
-                            new CuiLabel
-                            {
-                                Text =
-                                {
-                                    Text = $"{grantedPerms}/{totalPerms}  ",
-                                    Align = TextAnchor.MiddleRight,
-                                    FontSize = permCfg.PluginGrid.FontSize,
-                                    Font = "robotocondensed-bold.ttf",
-                                    Color = badgeColor,
-                                },
-                                RectTransform =
-                                {
-                                    AnchorMin = "0 0",
-                                    AnchorMax = "1 1",
-                                    OffsetMin = "0 0",
-                                    OffsetMax = "0 0",
-                                },
-                            },
-                            cardElemName
+                        AddLabel(
+                            container,
+                            cardElemName,
+                            null,
+                            $"{grantedPerms}/{totalPerms}  ",
+                            permCfg.PluginGrid.FontSize,
+                            "robotocondensed-bold.ttf",
+                            badgeColor,
+                            TextAnchor.MiddleRight,
+                            "0 0",
+                            "1 1"
                         );
                     }
                 }
@@ -6662,34 +6203,21 @@ namespace Oxide.Plugins
                     int bHalfW = permCfg.BulkActions.BackWidth / 2;
                     int bHalfH = permCfg.BulkActions.BackHeight / 2;
 
-                    container.Add(
-                        new CuiButton
-                        {
-                            Button =
-                            {
-                                Command = "radminmenu.perm_select_plugin back",
-                                Color = permCfg.BulkActions.BackButtonColor,
-                            },
-                            RectTransform =
-                            {
-                                AnchorMin = "0.5 0.5",
-                                AnchorMax = "0.5 0.5",
-                                OffsetMin =
-                                    $"{permCfg.BulkActions.BackOffsetX - bHalfW} {permCfg.BulkActions.OffsetY - bHalfH}",
-                                OffsetMax =
-                                    $"{permCfg.BulkActions.BackOffsetX + bHalfW} {permCfg.BulkActions.OffsetY + bHalfH}",
-                            },
-                            Text =
-                            {
-                                Text = Msg("PERM_BACK_TO_PLUGINS", player.UserIDString),
-                                Align = TextAnchor.MiddleCenter,
-                                FontSize = permCfg.BulkActions.FontSize,
-                                Font = "robotocondensed-bold.ttf",
-                                Color = permCfg.BulkActions.TextColor,
-                            },
-                        },
+                    AddButton(
+                        container,
                         LayerContentBody,
-                        "Perm_BackToPluginsBtn"
+                        "Perm_BackToPluginsBtn",
+                        "radminmenu.perm_select_plugin back",
+                        permCfg.BulkActions.BackButtonColor,
+                        "0.5 0.5",
+                        "0.5 0.5",
+                        $"{permCfg.BulkActions.BackOffsetX - bHalfW} {permCfg.BulkActions.OffsetY - bHalfH}",
+                        $"{permCfg.BulkActions.BackOffsetX + bHalfW} {permCfg.BulkActions.OffsetY + bHalfH}",
+                        Msg("PERM_BACK_TO_PLUGINS", player.UserIDString),
+                        permCfg.BulkActions.FontSize,
+                        "robotocondensed-bold.ttf",
+                        permCfg.BulkActions.TextColor,
+                        TextAnchor.MiddleCenter
                     );
 
                     // CHANGE: Отображение титула группы с правильным регистром букв в заголовке прав плагина
@@ -6699,94 +6227,56 @@ namespace Oxide.Plugins
                         : session.PermTargetName;
 
                     int pluginTitleHalfW = permCfg.BulkActions.PluginTitleWidth / 2;
-                    container.Add(
-                        new CuiLabel
-                        {
-                            Text =
-                            {
-                                Text =
-                                    $"<b>{session.PermSelectedPlugin}</b>  (<color={permCfg.UserMode.HeaderColor}>{pGroupDisplay}</color>)",
-                                Align = TextAnchor.MiddleCenter,
-                                FontSize = permCfg.UserMode.HeaderFontSize,
-                                Font = "robotocondensed-bold.ttf",
-                                Color = permCfg.Tabs.TextColor,
-                            },
-                            RectTransform =
-                            {
-                                AnchorMin = "0.5 0.5",
-                                AnchorMax = "0.5 0.5",
-                                OffsetMin =
-                                    $"{permCfg.BulkActions.PluginTitleOffsetX - pluginTitleHalfW} {permCfg.BulkActions.OffsetY - bHalfH}",
-                                OffsetMax =
-                                    $"{permCfg.BulkActions.PluginTitleOffsetX + pluginTitleHalfW} {permCfg.BulkActions.OffsetY + bHalfH}",
-                            },
-                        },
-                        LayerContentBody
+                    AddLabel(
+                        container,
+                        LayerContentBody,
+                        null,
+                        $"<b>{session.PermSelectedPlugin}</b>  (<color={permCfg.UserMode.HeaderColor}>{pGroupDisplay}</color>)",
+                        permCfg.UserMode.HeaderFontSize,
+                        "robotocondensed-bold.ttf",
+                        permCfg.Tabs.TextColor,
+                        TextAnchor.MiddleCenter,
+                        "0.5 0.5",
+                        "0.5 0.5",
+                        $"{permCfg.BulkActions.PluginTitleOffsetX - pluginTitleHalfW} {permCfg.BulkActions.OffsetY - bHalfH}",
+                        $"{permCfg.BulkActions.PluginTitleOffsetX + pluginTitleHalfW} {permCfg.BulkActions.OffsetY + bHalfH}"
                     );
 
                     int bulkHalfW = permCfg.BulkActions.ActionWidth / 2;
                     int bulkHalfH = permCfg.BulkActions.ActionHeight / 2;
 
-                    container.Add(
-                        new CuiButton
-                        {
-                            Button =
-                            {
-                                Command =
-                                    $"radminmenu.perm_grant_all_group {session.PermTargetName} {session.PermSelectedPlugin}",
-                                Color = permCfg.BulkActions.GrantAllColor,
-                            },
-                            RectTransform =
-                            {
-                                AnchorMin = "0.5 0.5",
-                                AnchorMax = "0.5 0.5",
-                                OffsetMin =
-                                    $"{permCfg.BulkActions.GrantAllOffsetX - bulkHalfW} {permCfg.BulkActions.OffsetY - bulkHalfH}",
-                                OffsetMax =
-                                    $"{permCfg.BulkActions.GrantAllOffsetX + bulkHalfW} {permCfg.BulkActions.OffsetY + bulkHalfH}",
-                            },
-                            Text =
-                            {
-                                Text = Msg("PERM_GRANT_ALL", player.UserIDString),
-                                Align = TextAnchor.MiddleCenter,
-                                FontSize = permCfg.BulkActions.FontSize,
-                                Font = "robotocondensed-bold.ttf",
-                                Color = permCfg.BulkActions.TextColor,
-                            },
-                        },
+                    AddButton(
+                        container,
                         LayerContentBody,
-                        "Perm_GrantAllGroupBtn"
+                        "Perm_GrantAllGroupBtn",
+                        $"radminmenu.perm_grant_all_group {session.PermTargetName} {session.PermSelectedPlugin}",
+                        permCfg.BulkActions.GrantAllColor,
+                        "0.5 0.5",
+                        "0.5 0.5",
+                        $"{permCfg.BulkActions.GrantAllOffsetX - bulkHalfW} {permCfg.BulkActions.OffsetY - bulkHalfH}",
+                        $"{permCfg.BulkActions.GrantAllOffsetX + bulkHalfW} {permCfg.BulkActions.OffsetY + bulkHalfH}",
+                        Msg("PERM_GRANT_ALL", player.UserIDString),
+                        permCfg.BulkActions.FontSize,
+                        "robotocondensed-bold.ttf",
+                        permCfg.BulkActions.TextColor,
+                        TextAnchor.MiddleCenter
                     );
 
-                    container.Add(
-                        new CuiButton
-                        {
-                            Button =
-                            {
-                                Command =
-                                    $"radminmenu.perm_revoke_all_group {session.PermTargetName} {session.PermSelectedPlugin}",
-                                Color = permCfg.BulkActions.RevokeAllColor,
-                            },
-                            RectTransform =
-                            {
-                                AnchorMin = "0.5 0.5",
-                                AnchorMax = "0.5 0.5",
-                                OffsetMin =
-                                    $"{permCfg.BulkActions.RevokeAllOffsetX - bulkHalfW} {permCfg.BulkActions.OffsetY - bulkHalfH}",
-                                OffsetMax =
-                                    $"{permCfg.BulkActions.RevokeAllOffsetX + bulkHalfW} {permCfg.BulkActions.OffsetY + bulkHalfH}",
-                            },
-                            Text =
-                            {
-                                Text = Msg("PERM_REVOKE_ALL", player.UserIDString),
-                                Align = TextAnchor.MiddleCenter,
-                                FontSize = permCfg.BulkActions.FontSize,
-                                Font = "robotocondensed-bold.ttf",
-                                Color = permCfg.BulkActions.TextColor,
-                            },
-                        },
+                    AddButton(
+                        container,
                         LayerContentBody,
-                        "Perm_RevokeAllGroupBtn"
+                        "Perm_RevokeAllGroupBtn",
+                        $"radminmenu.perm_revoke_all_group {session.PermTargetName} {session.PermSelectedPlugin}",
+                        permCfg.BulkActions.RevokeAllColor,
+                        "0.5 0.5",
+                        "0.5 0.5",
+                        $"{permCfg.BulkActions.RevokeAllOffsetX - bulkHalfW} {permCfg.BulkActions.OffsetY - bulkHalfH}",
+                        $"{permCfg.BulkActions.RevokeAllOffsetX + bulkHalfW} {permCfg.BulkActions.OffsetY + bulkHalfH}",
+                        Msg("PERM_REVOKE_ALL", player.UserIDString),
+                        permCfg.BulkActions.FontSize,
+                        "robotocondensed-bold.ttf",
+                        permCfg.BulkActions.TextColor,
+                        TextAnchor.MiddleCenter
                     );
 
                     List<string> permsList;
@@ -6867,55 +6357,34 @@ namespace Oxide.Plugins
                         string statusIcon = hasPerm ? "✔" : "✖";
                         string permElemName = $"GroupPermToggle_{i}";
 
-                        container.Add(
-                            new CuiButton
-                            {
-                                Button =
-                                {
-                                    Command =
-                                        $"radminmenu.perm_toggle_group_perm {session.PermTargetName} {perm}",
-                                    Color = btnColor,
-                                },
-                                RectTransform =
-                                {
-                                    AnchorMin = "0 1",
-                                    AnchorMax = "0 1",
-                                    OffsetMin = $"{px} {-py - permCfg.PermGrid.CardHeight}",
-                                    OffsetMax = $"{px + permCfg.PermGrid.CardWidth} {-py}",
-                                },
-                                Text =
-                                {
-                                    Text = $"  {perm}",
-                                    Align = TextAnchor.MiddleLeft,
-                                    FontSize = permCfg.PermGrid.FontSize,
-                                    Font = "robotocondensed-bold.ttf",
-                                    Color = permCfg.PermGrid.TextColor,
-                                },
-                            },
+                        AddButton(
+                            container,
                             "Perm_PermScroll",
-                            permElemName
+                            permElemName,
+                            $"radminmenu.perm_toggle_group_perm {session.PermTargetName} {perm}",
+                            btnColor,
+                            "0 1",
+                            "0 1",
+                            $"{px} {-py - permCfg.PermGrid.CardHeight}",
+                            $"{px + permCfg.PermGrid.CardWidth} {-py}",
+                            $"  {perm}",
+                            permCfg.PermGrid.FontSize,
+                            "robotocondensed-bold.ttf",
+                            permCfg.PermGrid.TextColor,
+                            TextAnchor.MiddleLeft
                         );
 
-                        container.Add(
-                            new CuiLabel
-                            {
-                                Text =
-                                {
-                                    Text = $"{statusIcon}  ",
-                                    Align = TextAnchor.MiddleRight,
-                                    FontSize = permCfg.PermGrid.FontSize + 2,
-                                    Font = "robotocondensed-bold.ttf",
-                                    Color = permCfg.PermGrid.TextColor,
-                                },
-                                RectTransform =
-                                {
-                                    AnchorMin = "0 0",
-                                    AnchorMax = "1 1",
-                                    OffsetMin = "0 0",
-                                    OffsetMax = "0 0",
-                                },
-                            },
-                            permElemName
+                        AddLabel(
+                            container,
+                            permElemName,
+                            null,
+                            $"{statusIcon}  ",
+                            permCfg.PermGrid.FontSize + 2,
+                            "robotocondensed-bold.ttf",
+                            permCfg.PermGrid.TextColor,
+                            TextAnchor.MiddleRight,
+                            "0 0",
+                            "1 1"
                         );
                     }
                 }
@@ -6927,6 +6396,7 @@ namespace Oxide.Plugins
         }
 
         // CHANGE: Отображение прав игрока либо списка игроков для выбора
+        // CHANGE: отрисовка переведена на общие CUI-хелперы (сокращение объёма)
         private void RenderUserPermissionsView(
             CuiElementContainer container,
             BasePlayer player,
@@ -6948,60 +6418,38 @@ namespace Oxide.Plugins
             int b2MinX = b1MaxX + gap;
             int b2MaxX = b2MinX + tabW;
 
-            container.Add(
-                new CuiButton
-                {
-                    Button =
-                    {
-                        Command = "radminmenu.perm_mode group",
-                        Color = permCfg.Tabs.InactiveColor,
-                    },
-                    RectTransform =
-                    {
-                        AnchorMin = "0.5 0.5",
-                        AnchorMax = "0.5 0.5",
-                        OffsetMin = $"{b1MinX} {permCfg.Tabs.OffsetY - tabHalfH}",
-                        OffsetMax = $"{b1MaxX} {permCfg.Tabs.OffsetY + tabHalfH}",
-                    },
-                    Text =
-                    {
-                        Text = Msg("PERM_GROUPS", player.UserIDString),
-                        Align = TextAnchor.MiddleCenter,
-                        FontSize = permCfg.Tabs.FontSize,
-                        Font = "robotocondensed-bold.ttf",
-                        Color = permCfg.Tabs.TextColor,
-                    },
-                },
+            AddButton(
+                container,
                 LayerContentBody,
-                "Perm_Tab_Group"
+                "Perm_Tab_Group",
+                "radminmenu.perm_mode group",
+                permCfg.Tabs.InactiveColor,
+                "0.5 0.5",
+                "0.5 0.5",
+                $"{b1MinX} {permCfg.Tabs.OffsetY - tabHalfH}",
+                $"{b1MaxX} {permCfg.Tabs.OffsetY + tabHalfH}",
+                Msg("PERM_GROUPS", player.UserIDString),
+                permCfg.Tabs.FontSize,
+                "robotocondensed-bold.ttf",
+                permCfg.Tabs.TextColor,
+                TextAnchor.MiddleCenter
             );
 
-            container.Add(
-                new CuiButton
-                {
-                    Button =
-                    {
-                        Command = "radminmenu.perm_mode user",
-                        Color = permCfg.Tabs.ActiveColor,
-                    },
-                    RectTransform =
-                    {
-                        AnchorMin = "0.5 0.5",
-                        AnchorMax = "0.5 0.5",
-                        OffsetMin = $"{b2MinX} {permCfg.Tabs.OffsetY - tabHalfH}",
-                        OffsetMax = $"{b2MaxX} {permCfg.Tabs.OffsetY + tabHalfH}",
-                    },
-                    Text =
-                    {
-                        Text = Msg("PERM_USERS", player.UserIDString),
-                        Align = TextAnchor.MiddleCenter,
-                        FontSize = permCfg.Tabs.FontSize,
-                        Font = "robotocondensed-bold.ttf",
-                        Color = permCfg.Tabs.TextColor,
-                    },
-                },
+            AddButton(
+                container,
                 LayerContentBody,
-                "Perm_Tab_User"
+                "Perm_Tab_User",
+                "radminmenu.perm_mode user",
+                permCfg.Tabs.ActiveColor,
+                "0.5 0.5",
+                "0.5 0.5",
+                $"{b2MinX} {permCfg.Tabs.OffsetY - tabHalfH}",
+                $"{b2MaxX} {permCfg.Tabs.OffsetY + tabHalfH}",
+                Msg("PERM_USERS", player.UserIDString),
+                permCfg.Tabs.FontSize,
+                "robotocondensed-bold.ttf",
+                permCfg.Tabs.TextColor,
+                TextAnchor.MiddleCenter
             );
 
             if (session.SelectedUserId == 0)
@@ -7018,63 +6466,41 @@ namespace Oxide.Plugins
             int bHalfH = permCfg.BulkActions.BackHeight / 2;
 
             // 1. Верхняя строка игрока: Кнопка возврата к списку игроков и имя
-            container.Add(
-                new CuiButton
-                {
-                    Button =
-                    {
-                        Command = "radminmenu.perm_select_user 0",
-                        Color = permCfg.BulkActions.BackButtonColor,
-                    },
-                    RectTransform =
-                    {
-                        AnchorMin = "0.5 0.5",
-                        AnchorMax = "0.5 0.5",
-                        OffsetMin =
-                            $"{permCfg.BulkActions.BackOffsetX - bHalfW} {permCfg.UserMode.UserTitleOffsetY - bHalfH}",
-                        OffsetMax =
-                            $"{permCfg.BulkActions.BackOffsetX + bHalfW} {permCfg.UserMode.UserTitleOffsetY + bHalfH}",
-                    },
-                    Text =
-                    {
-                        Text = Msg("PERM_BACK_TO_USERS", player.UserIDString),
-                        Align = TextAnchor.MiddleCenter,
-                        FontSize = permCfg.BulkActions.FontSize,
-                        Font = "robotocondensed-bold.ttf",
-                        Color = permCfg.BulkActions.TextColor,
-                    },
-                },
+            AddButton(
+                container,
                 LayerContentBody,
-                "Perm_BackToUsersBtn"
+                "Perm_BackToUsersBtn",
+                "radminmenu.perm_select_user 0",
+                permCfg.BulkActions.BackButtonColor,
+                "0.5 0.5",
+                "0.5 0.5",
+                $"{permCfg.BulkActions.BackOffsetX - bHalfW} {permCfg.UserMode.UserTitleOffsetY - bHalfH}",
+                $"{permCfg.BulkActions.BackOffsetX + bHalfW} {permCfg.UserMode.UserTitleOffsetY + bHalfH}",
+                Msg("PERM_BACK_TO_USERS", player.UserIDString),
+                permCfg.BulkActions.FontSize,
+                "robotocondensed-bold.ttf",
+                permCfg.BulkActions.TextColor,
+                TextAnchor.MiddleCenter
             );
 
             int uTitleHalfW = permCfg.UserMode.UserTitleWidth / 2;
-            container.Add(
-                new CuiLabel
-                {
-                    Text =
-                    {
-                        Text = Msg(
-                            "PERM_USER_GROUPS_TITLE",
-                            player.UserIDString,
-                            $"<b>{targetName}</b> ({targetUserId})"
-                        ),
-                        Align = TextAnchor.MiddleLeft,
-                        FontSize = permCfg.UserMode.HeaderFontSize,
-                        Font = "robotocondensed-bold.ttf",
-                        Color = permCfg.UserMode.HeaderColor,
-                    },
-                    RectTransform =
-                    {
-                        AnchorMin = "0.5 0.5",
-                        AnchorMax = "0.5 0.5",
-                        OffsetMin =
-                            $"{permCfg.UserMode.UserTitleOffsetX - uTitleHalfW} {permCfg.UserMode.UserTitleOffsetY - bHalfH}",
-                        OffsetMax =
-                            $"{permCfg.UserMode.UserTitleOffsetX + uTitleHalfW} {permCfg.UserMode.UserTitleOffsetY + bHalfH}",
-                    },
-                },
-                LayerContentBody
+            AddLabel(
+                container,
+                LayerContentBody,
+                null,
+                Msg(
+                    "PERM_USER_GROUPS_TITLE",
+                    player.UserIDString,
+                    $"<b>{targetName}</b> ({targetUserId})"
+                ),
+                permCfg.UserMode.HeaderFontSize,
+                "robotocondensed-bold.ttf",
+                permCfg.UserMode.HeaderColor,
+                TextAnchor.MiddleLeft,
+                "0.5 0.5",
+                "0.5 0.5",
+                $"{permCfg.UserMode.UserTitleOffsetX - uTitleHalfW} {permCfg.UserMode.UserTitleOffsetY - bHalfH}",
+                $"{permCfg.UserMode.UserTitleOffsetX + uTitleHalfW} {permCfg.UserMode.UserTitleOffsetY + bHalfH}"
             );
 
             // 2. Строка групп игрока через горизонтальный ScrollView
@@ -7145,33 +6571,21 @@ namespace Oxide.Plugins
                     ? permCfg.PermGrid.GrantedColor
                     : permCfg.PermGrid.RevokedColor;
 
-                container.Add(
-                    new CuiButton
-                    {
-                        Button =
-                        {
-                            Command =
-                                $"radminmenu.perm_toggle_user_group {targetUserId} {groupName}",
-                            Color = btnColor,
-                        },
-                        RectTransform =
-                        {
-                            AnchorMin = "0 0.5",
-                            AnchorMax = "0 0.5",
-                            OffsetMin = $"{gx} {-gHalfH}",
-                            OffsetMax = $"{gx + permCfg.GroupsBar.Width} {gHalfH}",
-                        },
-                        Text =
-                        {
-                            Text = inGroup ? $"✔ {groupName}" : groupName,
-                            Align = TextAnchor.MiddleCenter,
-                            FontSize = permCfg.GroupsBar.FontSize,
-                            Font = "robotocondensed-bold.ttf",
-                            Color = permCfg.GroupsBar.TextColor,
-                        },
-                    },
+                AddButton(
+                    container,
                     "User_GroupsScroll",
-                    $"UserGroup_{groupName}"
+                    $"UserGroup_{groupName}",
+                    $"radminmenu.perm_toggle_user_group {targetUserId} {groupName}",
+                    btnColor,
+                    "0 0.5",
+                    "0 0.5",
+                    $"{gx} {-gHalfH}",
+                    $"{gx + permCfg.GroupsBar.Width} {gHalfH}",
+                    inGroup ? $"✔ {groupName}" : groupName,
+                    permCfg.GroupsBar.FontSize,
+                    "robotocondensed-bold.ttf",
+                    permCfg.GroupsBar.TextColor,
+                    TextAnchor.MiddleCenter
                 );
             }
 
@@ -7183,22 +6597,15 @@ namespace Oxide.Plugins
                 int sHalfW = permCfg.Search.Width / 2;
                 int sHalfH = permCfg.Search.Height / 2;
 
-                container.Add(
-                    new CuiPanel
-                    {
-                        Image = { Color = permCfg.Search.BackgroundColor },
-                        RectTransform =
-                        {
-                            AnchorMin = "0.5 0.5",
-                            AnchorMax = "0.5 0.5",
-                            OffsetMin =
-                                $"{permCfg.Search.OffsetX - sHalfW} {permCfg.UserMode.UserActionRowOffsetY - sHalfH}",
-                            OffsetMax =
-                                $"{permCfg.Search.OffsetX + sHalfW} {permCfg.UserMode.UserActionRowOffsetY + sHalfH}",
-                        },
-                    },
+                AddPanel(
+                    container,
                     LayerContentBody,
-                    "UserPermSearchBg"
+                    "UserPermSearchBg",
+                    permCfg.Search.BackgroundColor,
+                    "0.5 0.5",
+                    "0.5 0.5",
+                    $"{permCfg.Search.OffsetX - sHalfW} {permCfg.UserMode.UserActionRowOffsetY - sHalfH}",
+                    $"{permCfg.Search.OffsetX + sHalfW} {permCfg.UserMode.UserActionRowOffsetY + sHalfH}"
                 );
 
                 // CHANGE: Интерактивный плейсхолдер поиска прав игрока: отображается когда пусто, исчезает по клику
@@ -7208,32 +6615,21 @@ namespace Oxide.Plugins
 
                 if (showUserPermPlaceholder)
                 {
-                    container.Add(
-                        new CuiButton
-                        {
-                            Button =
-                            {
-                                Command = "radminmenu.focus user_perm_search",
-                                Color = "0 0 0 0",
-                            },
-                            RectTransform =
-                            {
-                                AnchorMin = "0 0",
-                                AnchorMax = "1 1",
-                                OffsetMin = $"{permCfg.Search.PaddingX} 0",
-                                OffsetMax = $"{-permCfg.Search.PaddingX} 0",
-                            },
-                            Text =
-                            {
-                                Text = Msg("PERM_SEARCH_PLACEHOLDER", player.UserIDString),
-                                FontSize = permCfg.Search.FontSize,
-                                Font = "robotocondensed-regular.ttf",
-                                Align = TextAnchor.MiddleLeft,
-                                Color = permCfg.Search.PlaceholderColor,
-                            },
-                        },
+                    AddButton(
+                        container,
                         "UserPermSearchBg",
-                        "UserPermSearchPlaceholderBtn"
+                        "UserPermSearchPlaceholderBtn",
+                        "radminmenu.focus user_perm_search",
+                        "0 0 0 0",
+                        "0 0",
+                        "1 1",
+                        $"{permCfg.Search.PaddingX} 0",
+                        $"{-permCfg.Search.PaddingX} 0",
+                        Msg("PERM_SEARCH_PLACEHOLDER", player.UserIDString),
+                        permCfg.Search.FontSize,
+                        "robotocondensed-regular.ttf",
+                        permCfg.Search.PlaceholderColor,
+                        TextAnchor.MiddleLeft
                     );
                 }
                 else
@@ -7276,32 +6672,23 @@ namespace Oxide.Plugins
                         : new HashSet<string>();
 
                 int uPermTitleHalfW = permCfg.UserMode.UserPermTitleWidth / 2;
-                container.Add(
-                    new CuiLabel
-                    {
-                        Text =
-                        {
-                            Text = Msg(
-                                "PERM_USER_PERMS_TITLE",
-                                player.UserIDString,
-                                directPermsSet.Count
-                            ),
-                            Align = TextAnchor.MiddleLeft,
-                            FontSize = permCfg.UserMode.ItemFontSize,
-                            Font = "robotocondensed-bold.ttf",
-                            Color = permCfg.UserMode.DetailsColor,
-                        },
-                        RectTransform =
-                        {
-                            AnchorMin = "0.5 0.5",
-                            AnchorMax = "0.5 0.5",
-                            OffsetMin =
-                                $"{permCfg.UserMode.UserPermTitleOffsetX - uPermTitleHalfW} {permCfg.UserMode.UserActionRowOffsetY - sHalfH}",
-                            OffsetMax =
-                                $"{permCfg.UserMode.UserPermTitleOffsetX + uPermTitleHalfW} {permCfg.UserMode.UserActionRowOffsetY + sHalfH}",
-                        },
-                    },
-                    LayerContentBody
+                AddLabel(
+                    container,
+                    LayerContentBody,
+                    null,
+                    Msg(
+                        "PERM_USER_PERMS_TITLE",
+                        player.UserIDString,
+                        directPermsSet.Count
+                    ),
+                    permCfg.UserMode.ItemFontSize,
+                    "robotocondensed-bold.ttf",
+                    permCfg.UserMode.DetailsColor,
+                    TextAnchor.MiddleLeft,
+                    "0.5 0.5",
+                    "0.5 0.5",
+                    $"{permCfg.UserMode.UserPermTitleOffsetX - uPermTitleHalfW} {permCfg.UserMode.UserActionRowOffsetY - sHalfH}",
+                    $"{permCfg.UserMode.UserPermTitleOffsetX + uPermTitleHalfW} {permCfg.UserMode.UserActionRowOffsetY + sHalfH}"
                 );
 
                 var pluginList = pluginsPerms
@@ -7402,178 +6789,107 @@ namespace Oxide.Plugins
                             );
                     string cardElemName = $"UserPermPlugin_{pName}";
 
-                    container.Add(
-                        new CuiButton
-                        {
-                            Button =
-                            {
-                                Command = $"radminmenu.perm_select_plugin {pName}",
-                                Color = cardBgColor,
-                            },
-                            RectTransform =
-                            {
-                                AnchorMin = "0 1",
-                                AnchorMax = "0 1",
-                                OffsetMin = $"{px} {-py - permCfg.PluginGrid.CardHeight}",
-                                OffsetMax = $"{px + permCfg.PluginGrid.CardWidth} {-py}",
-                            },
-                            Text =
-                            {
-                                Text = $"  <b>{pName}</b>",
-                                Align = TextAnchor.MiddleLeft,
-                                FontSize = permCfg.PluginGrid.FontSize,
-                                Font = "robotocondensed-bold.ttf",
-                                Color = permCfg.PluginGrid.TextColor,
-                            },
-                        },
+                    AddButton(
+                        container,
                         "UserPerm_PluginScroll",
-                        cardElemName
+                        cardElemName,
+                        $"radminmenu.perm_select_plugin {pName}",
+                        cardBgColor,
+                        "0 1",
+                        "0 1",
+                        $"{px} {-py - permCfg.PluginGrid.CardHeight}",
+                        $"{px + permCfg.PluginGrid.CardWidth} {-py}",
+                        $"  <b>{pName}</b>",
+                        permCfg.PluginGrid.FontSize,
+                        "robotocondensed-bold.ttf",
+                        permCfg.PluginGrid.TextColor,
+                        TextAnchor.MiddleLeft
                     );
 
-                    container.Add(
-                        new CuiLabel
-                        {
-                            Text =
-                            {
-                                Text = $"{totalGranted}/{totalPerms}  ",
-                                Align = TextAnchor.MiddleRight,
-                                FontSize = permCfg.PluginGrid.FontSize,
-                                Font = "robotocondensed-bold.ttf",
-                                Color = badgeColor,
-                            },
-                            RectTransform =
-                            {
-                                AnchorMin = "0 0",
-                                AnchorMax = "1 1",
-                                OffsetMin = "0 0",
-                                OffsetMax = "0 0",
-                            },
-                        },
-                        cardElemName
+                    AddLabel(
+                        container,
+                        cardElemName,
+                        null,
+                        $"{totalGranted}/{totalPerms}  ",
+                        permCfg.PluginGrid.FontSize,
+                        "robotocondensed-bold.ttf",
+                        badgeColor,
+                        TextAnchor.MiddleRight,
+                        "0 0",
+                        "1 1"
                     );
                 }
             }
             else
             {
-                container.Add(
-                    new CuiButton
-                    {
-                        Button =
-                        {
-                            Command = "radminmenu.perm_select_plugin back",
-                            Color = permCfg.BulkActions.BackButtonColor,
-                        },
-                        RectTransform =
-                        {
-                            AnchorMin = "0.5 0.5",
-                            AnchorMax = "0.5 0.5",
-                            OffsetMin =
-                                $"{permCfg.BulkActions.BackOffsetX - bHalfW} {permCfg.UserMode.UserActionRowOffsetY - bHalfH}",
-                            OffsetMax =
-                                $"{permCfg.BulkActions.BackOffsetX + bHalfW} {permCfg.UserMode.UserActionRowOffsetY + bHalfH}",
-                        },
-                        Text =
-                        {
-                            Text = Msg("PERM_BACK_TO_PLUGINS", player.UserIDString),
-                            Align = TextAnchor.MiddleCenter,
-                            FontSize = permCfg.BulkActions.FontSize,
-                            Font = "robotocondensed-bold.ttf",
-                            Color = permCfg.BulkActions.TextColor,
-                        },
-                    },
+                AddButton(
+                    container,
                     LayerContentBody,
-                    "Perm_BackToPluginsUserBtn"
+                    "Perm_BackToPluginsUserBtn",
+                    "radminmenu.perm_select_plugin back",
+                    permCfg.BulkActions.BackButtonColor,
+                    "0.5 0.5",
+                    "0.5 0.5",
+                    $"{permCfg.BulkActions.BackOffsetX - bHalfW} {permCfg.UserMode.UserActionRowOffsetY - bHalfH}",
+                    $"{permCfg.BulkActions.BackOffsetX + bHalfW} {permCfg.UserMode.UserActionRowOffsetY + bHalfH}",
+                    Msg("PERM_BACK_TO_PLUGINS", player.UserIDString),
+                    permCfg.BulkActions.FontSize,
+                    "robotocondensed-bold.ttf",
+                    permCfg.BulkActions.TextColor,
+                    TextAnchor.MiddleCenter
                 );
 
                 int pluginTitleHalfW = permCfg.BulkActions.PluginTitleWidth / 2;
-                container.Add(
-                    new CuiLabel
-                    {
-                        Text =
-                        {
-                            Text =
-                                $"<b>{session.PermSelectedPlugin}</b>  (<color={permCfg.UserMode.HeaderColor}>{targetName}</color>)",
-                            Align = TextAnchor.MiddleCenter,
-                            FontSize = permCfg.UserMode.HeaderFontSize,
-                            Font = "robotocondensed-bold.ttf",
-                            Color = permCfg.Tabs.TextColor,
-                        },
-                        RectTransform =
-                        {
-                            AnchorMin = "0.5 0.5",
-                            AnchorMax = "0.5 0.5",
-                            OffsetMin =
-                                $"{permCfg.BulkActions.PluginTitleOffsetX - pluginTitleHalfW} {permCfg.UserMode.UserActionRowOffsetY - bHalfH}",
-                            OffsetMax =
-                                $"{permCfg.BulkActions.PluginTitleOffsetX + pluginTitleHalfW} {permCfg.UserMode.UserActionRowOffsetY + bHalfH}",
-                        },
-                    },
-                    LayerContentBody
+                AddLabel(
+                    container,
+                    LayerContentBody,
+                    null,
+                    $"<b>{session.PermSelectedPlugin}</b>  (<color={permCfg.UserMode.HeaderColor}>{targetName}</color>)",
+                    permCfg.UserMode.HeaderFontSize,
+                    "robotocondensed-bold.ttf",
+                    permCfg.Tabs.TextColor,
+                    TextAnchor.MiddleCenter,
+                    "0.5 0.5",
+                    "0.5 0.5",
+                    $"{permCfg.BulkActions.PluginTitleOffsetX - pluginTitleHalfW} {permCfg.UserMode.UserActionRowOffsetY - bHalfH}",
+                    $"{permCfg.BulkActions.PluginTitleOffsetX + pluginTitleHalfW} {permCfg.UserMode.UserActionRowOffsetY + bHalfH}"
                 );
 
                 int bulkHalfW = permCfg.BulkActions.ActionWidth / 2;
                 int bulkHalfH = permCfg.BulkActions.ActionHeight / 2;
 
-                container.Add(
-                    new CuiButton
-                    {
-                        Button =
-                        {
-                            Command =
-                                $"radminmenu.perm_grant_all_user {targetUserId} {session.PermSelectedPlugin}",
-                            Color = permCfg.BulkActions.GrantAllColor,
-                        },
-                        RectTransform =
-                        {
-                            AnchorMin = "0.5 0.5",
-                            AnchorMax = "0.5 0.5",
-                            OffsetMin =
-                                $"{permCfg.BulkActions.GrantAllOffsetX - bulkHalfW} {permCfg.UserMode.UserActionRowOffsetY - bulkHalfH}",
-                            OffsetMax =
-                                $"{permCfg.BulkActions.GrantAllOffsetX + bulkHalfW} {permCfg.UserMode.UserActionRowOffsetY + bulkHalfH}",
-                        },
-                        Text =
-                        {
-                            Text = Msg("PERM_GRANT_ALL", player.UserIDString),
-                            Align = TextAnchor.MiddleCenter,
-                            FontSize = permCfg.BulkActions.FontSize,
-                            Font = "robotocondensed-bold.ttf",
-                            Color = permCfg.BulkActions.TextColor,
-                        },
-                    },
+                AddButton(
+                    container,
                     LayerContentBody,
-                    "Perm_GrantAllUserBtn"
+                    "Perm_GrantAllUserBtn",
+                    $"radminmenu.perm_grant_all_user {targetUserId} {session.PermSelectedPlugin}",
+                    permCfg.BulkActions.GrantAllColor,
+                    "0.5 0.5",
+                    "0.5 0.5",
+                    $"{permCfg.BulkActions.GrantAllOffsetX - bulkHalfW} {permCfg.UserMode.UserActionRowOffsetY - bulkHalfH}",
+                    $"{permCfg.BulkActions.GrantAllOffsetX + bulkHalfW} {permCfg.UserMode.UserActionRowOffsetY + bulkHalfH}",
+                    Msg("PERM_GRANT_ALL", player.UserIDString),
+                    permCfg.BulkActions.FontSize,
+                    "robotocondensed-bold.ttf",
+                    permCfg.BulkActions.TextColor,
+                    TextAnchor.MiddleCenter
                 );
 
-                container.Add(
-                    new CuiButton
-                    {
-                        Button =
-                        {
-                            Command =
-                                $"radminmenu.perm_revoke_all_user {targetUserId} {session.PermSelectedPlugin}",
-                            Color = permCfg.BulkActions.RevokeAllColor,
-                        },
-                        RectTransform =
-                        {
-                            AnchorMin = "0.5 0.5",
-                            AnchorMax = "0.5 0.5",
-                            OffsetMin =
-                                $"{permCfg.BulkActions.RevokeAllOffsetX - bulkHalfW} {permCfg.UserMode.UserActionRowOffsetY - bulkHalfH}",
-                            OffsetMax =
-                                $"{permCfg.BulkActions.RevokeAllOffsetX + bulkHalfW} {permCfg.UserMode.UserActionRowOffsetY + bulkHalfH}",
-                        },
-                        Text =
-                        {
-                            Text = Msg("PERM_REVOKE_ALL", player.UserIDString),
-                            Align = TextAnchor.MiddleCenter,
-                            FontSize = permCfg.BulkActions.FontSize,
-                            Font = "robotocondensed-bold.ttf",
-                            Color = permCfg.BulkActions.TextColor,
-                        },
-                    },
+                AddButton(
+                    container,
                     LayerContentBody,
-                    "Perm_RevokeAllUserBtn"
+                    "Perm_RevokeAllUserBtn",
+                    $"radminmenu.perm_revoke_all_user {targetUserId} {session.PermSelectedPlugin}",
+                    permCfg.BulkActions.RevokeAllColor,
+                    "0.5 0.5",
+                    "0.5 0.5",
+                    $"{permCfg.BulkActions.RevokeAllOffsetX - bulkHalfW} {permCfg.UserMode.UserActionRowOffsetY - bulkHalfH}",
+                    $"{permCfg.BulkActions.RevokeAllOffsetX + bulkHalfW} {permCfg.UserMode.UserActionRowOffsetY + bulkHalfH}",
+                    Msg("PERM_REVOKE_ALL", player.UserIDString),
+                    permCfg.BulkActions.FontSize,
+                    "robotocondensed-bold.ttf",
+                    permCfg.BulkActions.TextColor,
+                    TextAnchor.MiddleCenter
                 );
 
                 List<string> permsList;
@@ -7662,60 +6978,41 @@ namespace Oxide.Plugins
                         : (hasFromGroup ? $"✔ {Msg("PERM_GROUP", player.UserIDString)}" : "✖");
                     string permElemName = $"UserPermToggle_{i}";
 
-                    container.Add(
-                        new CuiButton
-                        {
-                            Button =
-                            {
-                                Command = $"radminmenu.perm_toggle_user_perm {targetUserId} {perm}",
-                                Color = btnColor,
-                            },
-                            RectTransform =
-                            {
-                                AnchorMin = "0 1",
-                                AnchorMax = "0 1",
-                                OffsetMin = $"{px} {-py - permCfg.PermGrid.CardHeight}",
-                                OffsetMax = $"{px + permCfg.PermGrid.CardWidth} {-py}",
-                            },
-                            Text =
-                            {
-                                Text = $"  {perm}",
-                                Align = TextAnchor.MiddleLeft,
-                                FontSize = permCfg.PermGrid.FontSize,
-                                Font = "robotocondensed-bold.ttf",
-                                Color = permCfg.PermGrid.TextColor,
-                            },
-                        },
+                    AddButton(
+                        container,
                         "UserPerm_PermScroll",
-                        permElemName
+                        permElemName,
+                        $"radminmenu.perm_toggle_user_perm {targetUserId} {perm}",
+                        btnColor,
+                        "0 1",
+                        "0 1",
+                        $"{px} {-py - permCfg.PermGrid.CardHeight}",
+                        $"{px + permCfg.PermGrid.CardWidth} {-py}",
+                        $"  {perm}",
+                        permCfg.PermGrid.FontSize,
+                        "robotocondensed-bold.ttf",
+                        permCfg.PermGrid.TextColor,
+                        TextAnchor.MiddleLeft
                     );
 
-                    container.Add(
-                        new CuiLabel
-                        {
-                            Text =
-                            {
-                                Text = $"{statusBadgeText}  ",
-                                Align = TextAnchor.MiddleRight,
-                                FontSize = permCfg.PermGrid.FontSize - 1,
-                                Font = "robotocondensed-bold.ttf",
-                                Color = permCfg.PermGrid.TextColor,
-                            },
-                            RectTransform =
-                            {
-                                AnchorMin = "0 0",
-                                AnchorMax = "1 1",
-                                OffsetMin = "0 0",
-                                OffsetMax = "0 0",
-                            },
-                        },
-                        permElemName
+                    AddLabel(
+                        container,
+                        permElemName,
+                        null,
+                        $"{statusBadgeText}  ",
+                        permCfg.PermGrid.FontSize - 1,
+                        "robotocondensed-bold.ttf",
+                        permCfg.PermGrid.TextColor,
+                        TextAnchor.MiddleRight,
+                        "0 0",
+                        "1 1"
                     );
                 }
             }
         }
 
         // CHANGE: Список игроков для выбора при управлении правами пользователя через ScrollView
+        // CHANGE: отрисовка переведена на общие CUI-хелперы (сокращение объёма)
         private void RenderUserSelectionList(
             CuiElementContainer container,
             BasePlayer player,
@@ -7726,22 +7023,15 @@ namespace Oxide.Plugins
             int sHalfW = permCfg.Search.Width / 2;
             int sHalfH = permCfg.Search.Height / 2;
 
-            container.Add(
-                new CuiPanel
-                {
-                    Image = { Color = permCfg.Search.BackgroundColor },
-                    RectTransform =
-                    {
-                        AnchorMin = "0.5 0.5",
-                        AnchorMax = "0.5 0.5",
-                        OffsetMin =
-                            $"{permCfg.UserMode.UserSearchOffsetX - sHalfW} {permCfg.GroupsBar.OffsetY - sHalfH}",
-                        OffsetMax =
-                            $"{permCfg.UserMode.UserSearchOffsetX + sHalfW} {permCfg.GroupsBar.OffsetY + sHalfH}",
-                    },
-                },
+            AddPanel(
+                container,
                 LayerContentBody,
-                "UserSearchBg"
+                "UserSearchBg",
+                permCfg.Search.BackgroundColor,
+                "0.5 0.5",
+                "0.5 0.5",
+                $"{permCfg.UserMode.UserSearchOffsetX - sHalfW} {permCfg.GroupsBar.OffsetY - sHalfH}",
+                $"{permCfg.UserMode.UserSearchOffsetX + sHalfW} {permCfg.GroupsBar.OffsetY + sHalfH}"
             );
 
             // CHANGE: Интерактивный плейсхолдер поиска пользователей: отображается когда пусто, исчезает по клику
@@ -7751,32 +7041,21 @@ namespace Oxide.Plugins
 
             if (showUserSearchPlaceholder)
             {
-                container.Add(
-                    new CuiButton
-                    {
-                        Button =
-                        {
-                            Command = "radminmenu.focus user_search",
-                            Color = "0 0 0 0",
-                        },
-                        RectTransform =
-                        {
-                            AnchorMin = "0 0",
-                            AnchorMax = "1 1",
-                            OffsetMin = $"{permCfg.Search.PaddingX} 0",
-                            OffsetMax = $"{-permCfg.Search.PaddingX} 0",
-                        },
-                        Text =
-                        {
-                            Text = Msg("PERM_USER_SEARCH_PLACEHOLDER", player.UserIDString),
-                            FontSize = permCfg.Search.FontSize,
-                            Font = "robotocondensed-regular.ttf",
-                            Align = TextAnchor.MiddleLeft,
-                            Color = permCfg.Search.PlaceholderColor,
-                        },
-                    },
+                AddButton(
+                    container,
                     "UserSearchBg",
-                    "UserSearchPlaceholderBtn"
+                    "UserSearchPlaceholderBtn",
+                    "radminmenu.focus user_search",
+                    "0 0 0 0",
+                    "0 0",
+                    "1 1",
+                    $"{permCfg.Search.PaddingX} 0",
+                    $"{-permCfg.Search.PaddingX} 0",
+                    Msg("PERM_USER_SEARCH_PLACEHOLDER", player.UserIDString),
+                    permCfg.Search.FontSize,
+                    "robotocondensed-regular.ttf",
+                    permCfg.Search.PlaceholderColor,
+                    TextAnchor.MiddleLeft
                 );
             }
             else
@@ -7842,28 +7121,19 @@ namespace Oxide.Plugins
                 .ToList();
 
             int totalLabelHalfW = permCfg.UserMode.UserTotalLabelWidth / 2;
-            container.Add(
-                new CuiLabel
-                {
-                    Text =
-                    {
-                        Text = Msg("PERM_TOTAL_USERS", player.UserIDString, allPlayers.Count),
-                        Align = TextAnchor.MiddleLeft,
-                        FontSize = permCfg.UserMode.ItemFontSize,
-                        Font = "robotocondensed-bold.ttf",
-                        Color = permCfg.UserMode.DetailsColor,
-                    },
-                    RectTransform =
-                    {
-                        AnchorMin = "0.5 0.5",
-                        AnchorMax = "0.5 0.5",
-                        OffsetMin =
-                            $"{permCfg.UserMode.UserTotalLabelOffsetX - totalLabelHalfW} {permCfg.GroupsBar.OffsetY - sHalfH}",
-                        OffsetMax =
-                            $"{permCfg.UserMode.UserTotalLabelOffsetX + totalLabelHalfW} {permCfg.GroupsBar.OffsetY + sHalfH}",
-                    },
-                },
-                LayerContentBody
+            AddLabel(
+                container,
+                LayerContentBody,
+                null,
+                Msg("PERM_TOTAL_USERS", player.UserIDString, allPlayers.Count),
+                permCfg.UserMode.ItemFontSize,
+                "robotocondensed-bold.ttf",
+                permCfg.UserMode.DetailsColor,
+                TextAnchor.MiddleLeft,
+                "0.5 0.5",
+                "0.5 0.5",
+                $"{permCfg.UserMode.UserTotalLabelOffsetX - totalLabelHalfW} {permCfg.GroupsBar.OffsetY - sHalfH}",
+                $"{permCfg.UserMode.UserTotalLabelOffsetX + totalLabelHalfW} {permCfg.GroupsBar.OffsetY + sHalfH}"
             );
 
             int cols = permCfg.PluginGrid.Columns;
@@ -7950,33 +7220,21 @@ namespace Oxide.Plugins
                     : (isSleeping ? "◐ SLEEPING" : "○ OFFLINE");
                 string cardName = $"PlayerPermCard_{p.Id}";
 
-                container.Add(
-                    new CuiButton
-                    {
-                        Button =
-                        {
-                            Command = $"radminmenu.perm_select_user {p.Id}",
-                            Color = permCfg.UserMode.CardBackgroundColor,
-                        },
-                        RectTransform =
-                        {
-                            AnchorMin = "0 1",
-                            AnchorMax = "0 1",
-                            OffsetMin = $"{px} {-py - permCfg.UserMode.UserPlayerCardHeight}",
-                            OffsetMax = $"{px + permCfg.UserMode.UserPlayerCardWidth} {-py}",
-                        },
-                        Text =
-                        {
-                            Text =
-                                $"  <b>{p.Name}</b>\n  <size=10><color={statusColor}>{statusText}</color></size>",
-                            Align = TextAnchor.MiddleLeft,
-                            FontSize = permCfg.UserMode.ItemFontSize,
-                            Font = "robotocondensed-bold.ttf",
-                            Color = permCfg.Tabs.TextColor,
-                        },
-                    },
+                AddButton(
+                    container,
                     "Perm_UserSelectScroll",
-                    cardName
+                    cardName,
+                    $"radminmenu.perm_select_user {p.Id}",
+                    permCfg.UserMode.CardBackgroundColor,
+                    "0 1",
+                    "0 1",
+                    $"{px} {-py - permCfg.UserMode.UserPlayerCardHeight}",
+                    $"{px + permCfg.UserMode.UserPlayerCardWidth} {-py}",
+                    $"  <b>{p.Name}</b>\n  <size=10><color={statusColor}>{statusText}</color></size>",
+                    permCfg.UserMode.ItemFontSize,
+                    "robotocondensed-bold.ttf",
+                    permCfg.Tabs.TextColor,
+                    TextAnchor.MiddleLeft
                 );
             }
         }
@@ -7985,6 +7243,7 @@ namespace Oxide.Plugins
 
         #region Content Page: Plugin Manager (Reactive & Fast)
 
+        // CHANGE: отрисовка переведена на общие CUI-хелперы (сокращение объёма)
         private void RenderPluginManagerContent(
             CuiElementContainer container,
             BasePlayer player,
@@ -7997,22 +7256,15 @@ namespace Oxide.Plugins
             int sHalfW = pmCfg.Search.Width / 2;
             int sHalfH = pmCfg.Search.Height / 2;
 
-            container.Add(
-                new CuiPanel
-                {
-                    Image = { Color = pmCfg.Search.BackgroundColor },
-                    RectTransform =
-                    {
-                        AnchorMin = "0.5 0.5",
-                        AnchorMax = "0.5 0.5",
-                        OffsetMin =
-                            $"{pmCfg.Search.OffsetX - sHalfW} {pmCfg.Search.OffsetY - sHalfH}",
-                        OffsetMax =
-                            $"{pmCfg.Search.OffsetX + sHalfW} {pmCfg.Search.OffsetY + sHalfH}",
-                    },
-                },
+            AddPanel(
+                container,
                 LayerContentBody,
-                "PmSearchBg"
+                "PmSearchBg",
+                pmCfg.Search.BackgroundColor,
+                "0.5 0.5",
+                "0.5 0.5",
+                $"{pmCfg.Search.OffsetX - sHalfW} {pmCfg.Search.OffsetY - sHalfH}",
+                $"{pmCfg.Search.OffsetX + sHalfW} {pmCfg.Search.OffsetY + sHalfH}"
             );
 
             // CHANGE: Интерактивный плейсхолдер поиска плагинов: отображается когда пусто, исчезает по клику
@@ -8021,32 +7273,21 @@ namespace Oxide.Plugins
 
             if (showPmPlaceholder)
             {
-                container.Add(
-                    new CuiButton
-                    {
-                        Button =
-                        {
-                            Command = "radminmenu.focus pm_search",
-                            Color = "0 0 0 0",
-                        },
-                        RectTransform =
-                        {
-                            AnchorMin = "0 0",
-                            AnchorMax = "1 1",
-                            OffsetMin = $"{pmCfg.Search.PaddingX} 0",
-                            OffsetMax = $"{-pmCfg.Search.PaddingX} 0",
-                        },
-                        Text =
-                        {
-                            Text = Msg("PM_SEARCH_PLACEHOLDER", player.UserIDString),
-                            FontSize = pmCfg.Search.FontSize,
-                            Font = "robotocondensed-regular.ttf",
-                            Align = TextAnchor.MiddleLeft,
-                            Color = pmCfg.Search.PlaceholderColor,
-                        },
-                    },
+                AddButton(
+                    container,
                     "PmSearchBg",
-                    "PmSearchPlaceholderBtn"
+                    "PmSearchPlaceholderBtn",
+                    "radminmenu.focus pm_search",
+                    "0 0 0 0",
+                    "0 0",
+                    "1 1",
+                    $"{pmCfg.Search.PaddingX} 0",
+                    $"{-pmCfg.Search.PaddingX} 0",
+                    Msg("PM_SEARCH_PLACEHOLDER", player.UserIDString),
+                    pmCfg.Search.FontSize,
+                    "robotocondensed-regular.ttf",
+                    pmCfg.Search.PlaceholderColor,
+                    TextAnchor.MiddleLeft
                 );
             }
             else
@@ -8086,34 +7327,21 @@ namespace Oxide.Plugins
             int rHalfW = pmCfg.ReloadAllButton.Width / 2;
             int rHalfH = pmCfg.ReloadAllButton.Height / 2;
 
-            container.Add(
-                new CuiButton
-                {
-                    Button =
-                    {
-                        Command = "radminmenu.pm_reloadall",
-                        Color = pmCfg.ReloadAllButton.BackgroundColor,
-                    },
-                    RectTransform =
-                    {
-                        AnchorMin = "0.5 0.5",
-                        AnchorMax = "0.5 0.5",
-                        OffsetMin =
-                            $"{pmCfg.ReloadAllButton.OffsetX - rHalfW} {pmCfg.ReloadAllButton.OffsetY - rHalfH}",
-                        OffsetMax =
-                            $"{pmCfg.ReloadAllButton.OffsetX + rHalfW} {pmCfg.ReloadAllButton.OffsetY + rHalfH}",
-                    },
-                    Text =
-                    {
-                        Text = Msg("PLUGINS_RELOAD_ALL", player.UserIDString),
-                        Align = TextAnchor.MiddleCenter,
-                        FontSize = pmCfg.ReloadAllButton.FontSize,
-                        Font = "robotocondensed-bold.ttf",
-                        Color = pmCfg.ReloadAllButton.TextColor,
-                    },
-                },
+            AddButton(
+                container,
                 LayerContentBody,
-                "PmReloadAllBtn"
+                "PmReloadAllBtn",
+                "radminmenu.pm_reloadall",
+                pmCfg.ReloadAllButton.BackgroundColor,
+                "0.5 0.5",
+                "0.5 0.5",
+                $"{pmCfg.ReloadAllButton.OffsetX - rHalfW} {pmCfg.ReloadAllButton.OffsetY - rHalfH}",
+                $"{pmCfg.ReloadAllButton.OffsetX + rHalfW} {pmCfg.ReloadAllButton.OffsetY + rHalfH}",
+                Msg("PLUGINS_RELOAD_ALL", player.UserIDString),
+                pmCfg.ReloadAllButton.FontSize,
+                "robotocondensed-bold.ttf",
+                pmCfg.ReloadAllButton.TextColor,
+                TextAnchor.MiddleCenter
             );
 
             // 3. Получение списка плагинов из папки
@@ -8193,46 +7421,36 @@ namespace Oxide.Plugins
 
                 int rowHalfW = pmCfg.Row.Width / 2;
 
-                container.Add(
-                    new CuiPanel
-                    {
-                        Image = { Color = pmCfg.Row.BackgroundColor },
-                        RectTransform =
-                        {
-                            AnchorMin = "0.5 1",
-                            AnchorMax = "0.5 1",
-                            OffsetMin = $"{-rowHalfW} {-yPos - pmCfg.Row.Height}",
-                            OffsetMax = $"{rowHalfW} {-yPos}",
-                        },
-                    },
+                AddPanel(
+                    container,
                     "PluginManager_Scroll",
-                    rowName
+                    rowName,
+                    pmCfg.Row.BackgroundColor,
+                    "0.5 1",
+                    "0.5 1",
+                    $"{-rowHalfW} {-yPos - pmCfg.Row.Height}",
+                    $"{rowHalfW} {-yPos}"
                 );
 
                 // Кнопка избранного ★
                 string favColor = isFavorite
                     ? pmCfg.ReloadAllButton.BackgroundColor
                     : pmCfg.Row.DescColor;
-                container.Add(
-                    new CuiButton
-                    {
-                        Button = { Command = $"radminmenu.pm_fav {pluginName}", Color = "0 0 0 0" },
-                        RectTransform =
-                        {
-                            AnchorMin = "0 0.5",
-                            AnchorMax = "0 0.5",
-                            OffsetMin = "8 -12",
-                            OffsetMax = "30 12",
-                        },
-                        Text =
-                        {
-                            Text = isFavorite ? "★" : "☆",
-                            Align = TextAnchor.MiddleCenter,
-                            FontSize = 18,
-                            Color = favColor,
-                        },
-                    },
-                    rowName
+                AddButton(
+                    container,
+                    rowName,
+                    null,
+                    $"radminmenu.pm_fav {pluginName}",
+                    "0 0 0 0",
+                    "0 0.5",
+                    "0 0.5",
+                    "8 -12",
+                    "30 12",
+                    isFavorite ? "★" : "☆",
+                    18,
+                    null,
+                    favColor,
+                    TextAnchor.MiddleCenter
                 );
 
                 // Название плагина и описание
@@ -8245,27 +7463,18 @@ namespace Oxide.Plugins
                         ? loadedPlugin.Description
                         : "";
 
-                container.Add(
-                    new CuiLabel
-                    {
-                        Text =
-                        {
-                            Text =
-                                $"<b>{displayName}</b>\n<size={pmCfg.Row.DescFontSize}><color={pmCfg.Row.DescColor}>{desc}</color></size>",
-                            Align = TextAnchor.MiddleLeft,
-                            FontSize = pmCfg.Row.TitleFontSize,
-                            Font = "robotocondensed-bold.ttf",
-                            Color = pmCfg.Row.TitleColor,
-                        },
-                        RectTransform =
-                        {
-                            AnchorMin = "0 0",
-                            AnchorMax = "0.55 1",
-                            OffsetMin = "36 0",
-                            OffsetMax = "0 0",
-                        },
-                    },
-                    rowName
+                AddLabel(
+                    container,
+                    rowName,
+                    null,
+                    $"<b>{displayName}</b>\n<size={pmCfg.Row.DescFontSize}><color={pmCfg.Row.DescColor}>{desc}</color></size>",
+                    pmCfg.Row.TitleFontSize,
+                    "robotocondensed-bold.ttf",
+                    pmCfg.Row.TitleColor,
+                    TextAnchor.MiddleLeft,
+                    "0 0",
+                    "0.55 1",
+                    "36 0"
                 );
 
                 // Бейдж статуса (Загружен / Выгружен)
@@ -8276,44 +7485,28 @@ namespace Oxide.Plugins
                     ? pmCfg.StatusBadge.LoadedColor
                     : pmCfg.StatusBadge.UnloadedColor;
 
-                container.Add(
-                    new CuiPanel
-                    {
-                        Image = { Color = badgeColor },
-                        RectTransform =
-                        {
-                            AnchorMin = "0.60 0.5",
-                            AnchorMax = "0.60 0.5",
-                            OffsetMin =
-                                $"{-pmCfg.StatusBadge.Width / 2} {-pmCfg.StatusBadge.Height / 2}",
-                            OffsetMax =
-                                $"{pmCfg.StatusBadge.Width / 2} {pmCfg.StatusBadge.Height / 2}",
-                        },
-                    },
+                AddPanel(
+                    container,
                     rowName,
-                    $"{rowName}_Badge"
+                    $"{rowName}_Badge",
+                    badgeColor,
+                    "0.60 0.5",
+                    "0.60 0.5",
+                    $"{-pmCfg.StatusBadge.Width / 2} {-pmCfg.StatusBadge.Height / 2}",
+                    $"{pmCfg.StatusBadge.Width / 2} {pmCfg.StatusBadge.Height / 2}"
                 );
 
-                container.Add(
-                    new CuiLabel
-                    {
-                        Text =
-                        {
-                            Text = badgeText,
-                            Align = TextAnchor.MiddleCenter,
-                            FontSize = pmCfg.StatusBadge.FontSize,
-                            Font = "robotocondensed-bold.ttf",
-                            Color = pmCfg.StatusBadge.TextColor,
-                        },
-                        RectTransform =
-                        {
-                            AnchorMin = "0 0",
-                            AnchorMax = "1 1",
-                            OffsetMin = "0 0",
-                            OffsetMax = "0 0",
-                        },
-                    },
-                    $"{rowName}_Badge"
+                AddLabel(
+                    container,
+                    $"{rowName}_Badge",
+                    null,
+                    badgeText,
+                    pmCfg.StatusBadge.FontSize,
+                    "robotocondensed-bold.ttf",
+                    pmCfg.StatusBadge.TextColor,
+                    TextAnchor.MiddleCenter,
+                    "0 0",
+                    "1 1"
                 );
 
                 int btn1Right = 10;
@@ -8325,89 +7518,59 @@ namespace Oxide.Plugins
                 if (isLoaded)
                 {
                     // Кнопка: Выгрузить
-                    container.Add(
-                        new CuiButton
-                        {
-                            Button =
-                            {
-                                Command = $"radminmenu.pm_unload {pluginName}",
-                                Color = pmCfg.ActionButtons.UnloadColor,
-                            },
-                            RectTransform =
-                            {
-                                AnchorMin = "1 0.5",
-                                AnchorMax = "1 0.5",
-                                OffsetMin = $"{-btn1Left} {-actBtnHalfH}",
-                                OffsetMax = $"{-btn1Right} {actBtnHalfH}",
-                            },
-                            Text =
-                            {
-                                Text = Msg("PLUGINS_UNLOAD", player.UserIDString),
-                                Align = TextAnchor.MiddleCenter,
-                                FontSize = pmCfg.ActionButtons.FontSize,
-                                Font = "robotocondensed-bold.ttf",
-                                Color = pmCfg.ActionButtons.TextColor,
-                            },
-                        },
-                        rowName
+                    AddButton(
+                        container,
+                        rowName,
+                        null,
+                        $"radminmenu.pm_unload {pluginName}",
+                        pmCfg.ActionButtons.UnloadColor,
+                        "1 0.5",
+                        "1 0.5",
+                        $"{-btn1Left} {-actBtnHalfH}",
+                        $"{-btn1Right} {actBtnHalfH}",
+                        Msg("PLUGINS_UNLOAD", player.UserIDString),
+                        pmCfg.ActionButtons.FontSize,
+                        "robotocondensed-bold.ttf",
+                        pmCfg.ActionButtons.TextColor,
+                        TextAnchor.MiddleCenter
                     );
 
                     // Кнопка: Перезагрузить
-                    container.Add(
-                        new CuiButton
-                        {
-                            Button =
-                            {
-                                Command = $"radminmenu.pm_reload {pluginName}",
-                                Color = pmCfg.ActionButtons.ReloadColor,
-                            },
-                            RectTransform =
-                            {
-                                AnchorMin = "1 0.5",
-                                AnchorMax = "1 0.5",
-                                OffsetMin = $"{-btn2Left} {-actBtnHalfH}",
-                                OffsetMax = $"{-btn2Right} {actBtnHalfH}",
-                            },
-                            Text =
-                            {
-                                Text = Msg("PLUGINS_RELOAD", player.UserIDString),
-                                Align = TextAnchor.MiddleCenter,
-                                FontSize = pmCfg.ActionButtons.FontSize,
-                                Font = "robotocondensed-bold.ttf",
-                                Color = pmCfg.ActionButtons.TextColor,
-                            },
-                        },
-                        rowName
+                    AddButton(
+                        container,
+                        rowName,
+                        null,
+                        $"radminmenu.pm_reload {pluginName}",
+                        pmCfg.ActionButtons.ReloadColor,
+                        "1 0.5",
+                        "1 0.5",
+                        $"{-btn2Left} {-actBtnHalfH}",
+                        $"{-btn2Right} {actBtnHalfH}",
+                        Msg("PLUGINS_RELOAD", player.UserIDString),
+                        pmCfg.ActionButtons.FontSize,
+                        "robotocondensed-bold.ttf",
+                        pmCfg.ActionButtons.TextColor,
+                        TextAnchor.MiddleCenter
                     );
                 }
                 else
                 {
                     // Кнопка: Загрузить
-                    container.Add(
-                        new CuiButton
-                        {
-                            Button =
-                            {
-                                Command = $"radminmenu.pm_load {pluginName}",
-                                Color = pmCfg.ActionButtons.LoadColor,
-                            },
-                            RectTransform =
-                            {
-                                AnchorMin = "1 0.5",
-                                AnchorMax = "1 0.5",
-                                OffsetMin = $"{-btn1Left} {-actBtnHalfH}",
-                                OffsetMax = $"{-btn1Right} {actBtnHalfH}",
-                            },
-                            Text =
-                            {
-                                Text = Msg("PLUGINS_LOAD", player.UserIDString),
-                                Align = TextAnchor.MiddleCenter,
-                                FontSize = pmCfg.ActionButtons.FontSize,
-                                Font = "robotocondensed-bold.ttf",
-                                Color = pmCfg.ActionButtons.TextColor,
-                            },
-                        },
-                        rowName
+                    AddButton(
+                        container,
+                        rowName,
+                        null,
+                        $"radminmenu.pm_load {pluginName}",
+                        pmCfg.ActionButtons.LoadColor,
+                        "1 0.5",
+                        "1 0.5",
+                        $"{-btn1Left} {-actBtnHalfH}",
+                        $"{-btn1Right} {actBtnHalfH}",
+                        Msg("PLUGINS_LOAD", player.UserIDString),
+                        pmCfg.ActionButtons.FontSize,
+                        "robotocondensed-bold.ttf",
+                        pmCfg.ActionButtons.TextColor,
+                        TextAnchor.MiddleCenter
                     );
                 }
             }
@@ -8429,44 +7592,24 @@ namespace Oxide.Plugins
             var container = new CuiElementContainer();
 
             // Фон блокировки
-            container.Add(
-                new CuiPanel
-                {
-                    Image = { Color = mCfg.OverlayColor },
-                    RectTransform =
-                    {
-                        AnchorMin = "0 0",
-                        AnchorMax = "1 1",
-                        OffsetMin = "0 0",
-                        OffsetMax = "0 0",
-                    },
-                    CursorEnabled = true,
-                },
-                "Overlay",
-                LayerModal
-            );
+            // CHANGE: отрисовка переведена на общие CUI-хелперы (сокращение объёма)
+            AddPanel(container, "Overlay", LayerModal, mCfg.OverlayColor, "0 0", "1 1", cursor: true);
 
             // Окно модала (Рамка и Фон)
             int halfW = mCfg.Panel.Width / 2;
             int halfH = mCfg.Panel.Height / 2;
 
             // CHANGE: Рамка модального окна из конфигурации BorderColor и BorderSize
-            container.Add(
-                new CuiPanel
-                {
-                    Image = { Color = mCfg.BorderColor },
-                    RectTransform =
-                    {
-                        AnchorMin = "0.5 0.5",
-                        AnchorMax = "0.5 0.5",
-                        OffsetMin =
-                            $"{mCfg.Panel.OffsetX - halfW - mCfg.BorderSize} {mCfg.Panel.OffsetY - halfH - mCfg.BorderSize}",
-                        OffsetMax =
-                            $"{mCfg.Panel.OffsetX + halfW + mCfg.BorderSize} {mCfg.Panel.OffsetY + halfH + mCfg.BorderSize}",
-                    },
-                },
+            // CHANGE: отрисовка переведена на общие CUI-хелперы (сокращение объёма)
+            AddPanel(
+                container,
                 LayerModal,
-                "ModalBorder"
+                "ModalBorder",
+                mCfg.BorderColor,
+                "0.5 0.5",
+                "0.5 0.5",
+                $"{mCfg.Panel.OffsetX - halfW - mCfg.BorderSize} {mCfg.Panel.OffsetY - halfH - mCfg.BorderSize}",
+                $"{mCfg.Panel.OffsetX + halfW + mCfg.BorderSize} {mCfg.Panel.OffsetY + halfH + mCfg.BorderSize}"
             );
 
             container.Add(
@@ -8521,28 +7664,20 @@ namespace Oxide.Plugins
             }
 
             // Заголовок
-            container.Add(
-                new CuiLabel
-                {
-                    Text =
-                    {
-                        Text = title,
-                        Align = TextAnchor.MiddleCenter,
-                        FontSize = mCfg.Title.FontSize,
-                        Font = "robotocondensed-bold.ttf",
-                        Color = mCfg.Title.TextColor,
-                    },
-                    RectTransform =
-                    {
-                        AnchorMin = "0 1",
-                        AnchorMax = "1 1",
-                        OffsetMin =
-                            $"{mCfg.Title.PaddingX} {mCfg.Title.OffsetY - mCfg.Title.Height / 2}",
-                        OffsetMax =
-                            $"{-mCfg.Title.PaddingX} {mCfg.Title.OffsetY + mCfg.Title.Height / 2}",
-                    },
-                },
-                "ModalDialog"
+            // CHANGE: отрисовка переведена на общие CUI-хелперы (сокращение объёма)
+            AddLabel(
+                container,
+                "ModalDialog",
+                null,
+                title,
+                mCfg.Title.FontSize,
+                "robotocondensed-bold.ttf",
+                mCfg.Title.TextColor,
+                TextAnchor.MiddleCenter,
+                "0 1",
+                "1 1",
+                $"{mCfg.Title.PaddingX} {mCfg.Title.OffsetY - mCfg.Title.Height / 2}",
+                $"{-mCfg.Title.PaddingX} {mCfg.Title.OffsetY + mCfg.Title.Height / 2}"
             );
 
             // Поле ввода или текст подтверждения
@@ -8576,44 +7711,34 @@ namespace Oxide.Plugins
                 }
 
                 // CHANGE: Описание подтверждения удаления группы с точным регистром названия группы
-                container.Add(
-                    new CuiLabel
-                    {
-                        Text =
-                        {
-                            Text = confirmDesc,
-                            Align = TextAnchor.MiddleCenter,
-                            FontSize = mCfg.Input.FontSize,
-                            Font = "robotocondensed-regular.ttf",
-                            Color = mCfg.Input.DescriptionTextColor,
-                        },
-                        RectTransform =
-                        {
-                            AnchorMin = "0.5 0.5",
-                            AnchorMax = "0.5 0.5",
-                            OffsetMin = $"{-inputHalfW} {-inputHalfH}",
-                            OffsetMax = $"{inputHalfW} {inputHalfH}",
-                        },
-                    },
-                    "ModalDialog"
+                // CHANGE: отрисовка переведена на общие CUI-хелперы (сокращение объёма)
+                AddLabel(
+                    container,
+                    "ModalDialog",
+                    null,
+                    confirmDesc,
+                    mCfg.Input.FontSize,
+                    "robotocondensed-regular.ttf",
+                    mCfg.Input.DescriptionTextColor,
+                    TextAnchor.MiddleCenter,
+                    "0.5 0.5",
+                    "0.5 0.5",
+                    $"{-inputHalfW} {-inputHalfH}",
+                    $"{inputHalfW} {inputHalfH}"
                 );
             }
             else
             {
-                container.Add(
-                    new CuiPanel
-                    {
-                        Image = { Color = mCfg.Input.BackgroundColor },
-                        RectTransform =
-                        {
-                            AnchorMin = "0.5 0.5",
-                            AnchorMax = "0.5 0.5",
-                            OffsetMin = $"{-inputHalfW} {-inputHalfH}",
-                            OffsetMax = $"{inputHalfW} {inputHalfH}",
-                        },
-                    },
+                // CHANGE: отрисовка переведена на общие CUI-хелперы (сокращение объёма)
+                AddPanel(
+                    container,
                     "ModalDialog",
-                    "ModalInputBg"
+                    "ModalInputBg",
+                    mCfg.Input.BackgroundColor,
+                    "0.5 0.5",
+                    "0.5 0.5",
+                    $"{-inputHalfW} {-inputHalfH}",
+                    $"{inputHalfW} {inputHalfH}"
                 );
 
                 // CHANGE: Интерактивный плейсхолдер ввода модального окна: отображается когда пусто, исчезает по клику
@@ -8627,32 +7752,22 @@ namespace Oxide.Plugins
                             ? Msg("MODAL_GROUP_NAME", player.UserIDString)
                             : Msg("MODAL_PLACEHOLDER_DEFAULT", player.UserIDString);
 
-                    container.Add(
-                        new CuiButton
-                        {
-                            Button =
-                            {
-                                Command = "radminmenu.focus modal_input",
-                                Color = "0 0 0 0",
-                            },
-                            RectTransform =
-                            {
-                                AnchorMin = "0 0",
-                                AnchorMax = "1 1",
-                                OffsetMin = $"{mCfg.Input.PaddingX} 0",
-                                OffsetMax = $"{-mCfg.Input.PaddingX} 0",
-                            },
-                            Text =
-                            {
-                                Text = placeholderText,
-                                FontSize = mCfg.Input.FontSize,
-                                Font = "robotocondensed-regular.ttf",
-                                Align = TextAnchor.MiddleLeft,
-                                Color = mCfg.Input.PlaceholderColor,
-                            },
-                        },
+                    // CHANGE: отрисовка переведена на общие CUI-хелперы (сокращение объёма)
+                    AddButton(
+                        container,
                         "ModalInputBg",
-                        "ModalInputPlaceholderBtn"
+                        "ModalInputPlaceholderBtn",
+                        "radminmenu.focus modal_input",
+                        "0 0 0 0",
+                        "0 0",
+                        "1 1",
+                        $"{mCfg.Input.PaddingX} 0",
+                        $"{-mCfg.Input.PaddingX} 0",
+                        placeholderText,
+                        mCfg.Input.FontSize,
+                        "robotocondensed-regular.ttf",
+                        mCfg.Input.PlaceholderColor,
+                        TextAnchor.MiddleLeft
                     );
                 }
                 else
@@ -8691,65 +7806,40 @@ namespace Oxide.Plugins
 
             // CHANGE: Кнопки подтверждения и отмены с полной шириной ButtonWidth (без переноса текста);
             // для confirm_action подтверждение выполняет конкретное опасное действие напрямую
-            container.Add(
-                new CuiButton
-                {
-                    Button =
-                    {
-                        Command =
-                            session.ModalType == "confirm_action"
-                                ? "radminmenu.act_confirmed"
-                                : "radminmenu.modal_confirm",
-                        Color = mCfg.Buttons.ConfirmColor,
-                    },
-                    RectTransform =
-                    {
-                        AnchorMin = "0.5 0",
-                        AnchorMax = "0.5 0",
-                        OffsetMin =
-                            $"{-mCfg.Buttons.Width - mCfg.Buttons.SpacingX / 2} {mCfg.Buttons.OffsetY}",
-                        OffsetMax =
-                            $"{-mCfg.Buttons.SpacingX / 2} {mCfg.Buttons.OffsetY + mCfg.Buttons.Height}",
-                    },
-                    Text =
-                    {
-                        Text = Msg("MODAL_CONFIRM", player.UserIDString),
-                        Align = TextAnchor.MiddleCenter,
-                        FontSize = mCfg.Buttons.FontSize,
-                        Font = "robotocondensed-bold.ttf",
-                        Color = mCfg.Buttons.TextColor,
-                    },
-                },
-                "ModalDialog"
+            // CHANGE: отрисовка переведена на общие CUI-хелперы (сокращение объёма)
+            AddButton(
+                container,
+                "ModalDialog",
+                null,
+                session.ModalType == "confirm_action"
+                    ? "radminmenu.act_confirmed"
+                    : "radminmenu.modal_confirm",
+                mCfg.Buttons.ConfirmColor,
+                "0.5 0",
+                "0.5 0",
+                $"{-mCfg.Buttons.Width - mCfg.Buttons.SpacingX / 2} {mCfg.Buttons.OffsetY}",
+                $"{-mCfg.Buttons.SpacingX / 2} {mCfg.Buttons.OffsetY + mCfg.Buttons.Height}",
+                Msg("MODAL_CONFIRM", player.UserIDString),
+                mCfg.Buttons.FontSize,
+                "robotocondensed-bold.ttf",
+                mCfg.Buttons.TextColor
             );
 
             // Кнопка отмены
-            container.Add(
-                new CuiButton
-                {
-                    Button =
-                    {
-                        Command = "radminmenu.modal_cancel",
-                        Color = mCfg.Buttons.CancelColor,
-                    },
-                    RectTransform =
-                    {
-                        AnchorMin = "0.5 0",
-                        AnchorMax = "0.5 0",
-                        OffsetMin = $"{mCfg.Buttons.SpacingX / 2} {mCfg.Buttons.OffsetY}",
-                        OffsetMax =
-                            $"{mCfg.Buttons.Width + mCfg.Buttons.SpacingX / 2} {mCfg.Buttons.OffsetY + mCfg.Buttons.Height}",
-                    },
-                    Text =
-                    {
-                        Text = Msg("MODAL_CANCEL", player.UserIDString),
-                        Align = TextAnchor.MiddleCenter,
-                        FontSize = mCfg.Buttons.FontSize,
-                        Font = "robotocondensed-bold.ttf",
-                        Color = mCfg.Buttons.TextColor,
-                    },
-                },
-                "ModalDialog"
+            AddButton(
+                container,
+                "ModalDialog",
+                null,
+                "radminmenu.modal_cancel",
+                mCfg.Buttons.CancelColor,
+                "0.5 0",
+                "0.5 0",
+                $"{mCfg.Buttons.SpacingX / 2} {mCfg.Buttons.OffsetY}",
+                $"{mCfg.Buttons.Width + mCfg.Buttons.SpacingX / 2} {mCfg.Buttons.OffsetY + mCfg.Buttons.Height}",
+                Msg("MODAL_CANCEL", player.UserIDString),
+                mCfg.Buttons.FontSize,
+                "robotocondensed-bold.ttf",
+                mCfg.Buttons.TextColor
             );
 
             CuiHelper.AddUi(player, container);
@@ -8903,26 +7993,6 @@ namespace Oxide.Plugins
                 // CHANGE: Очистка инвентаря игрока
                 case "clear_inv":
                     player.inventory?.Strip();
-                    break;
-                // CHANGE: Переключение креатив-режима для самого админа из Быстрого меню
-                case "creative":
-                    ToggleCreativeMode(player);
-                    // CHANGE: Точечное обновление кнопки вместо полной перерисовки — фикс сброса скролла
-                    RefreshQuickMenuCardButton(
-                        player,
-                        "QM_Card_Actions",
-                        _config.QuickMenu.ActionsCard.ButtonWidth,
-                        _config.QuickMenu.ActionsCard.ButtonHeight,
-                        _config.QuickMenu.ActionsCard.ButtonSpacingX,
-                        _config.QuickMenu.ActionsCard.ButtonFontSize,
-                        _config.QuickMenu.ActionsCard.ButtonTextColor,
-                        3,
-                        Msg("QM_CREATIVE", player.UserIDString),
-                        "radminmenu.qm creative",
-                        _creativePlayers.Contains(player.userID)
-                            ? _config.QuickMenu.ActionsCard.CreativeActiveButtonColor
-                            : _config.QuickMenu.ActionsCard.CreativeButtonColor
-                    );
                     break;
                 // CHANGE: Пресеты времени — точечное обновление тикера и поля ввода (без RenderContent,
                 // чтобы не пересоздавать ScrollView и не сбрасывать позицию скролла)
@@ -9382,11 +8452,6 @@ namespace Oxide.Plugins
                         player.UpdateSpectateTarget(target.UserIDString);
                     }
                     break;
-                // CHANGE: Корректное переключение креатив-режима через нативный флаг CreativeMode и коллекцию _creativePlayers
-                case "toggle_creative":
-                    if (target != null)
-                        ToggleCreativeMode(target);
-                    break;
                 case "toggle_cuff":
                     if (target != null)
                         ToggleHandcuffs(target);
@@ -9681,335 +8746,6 @@ namespace Oxide.Plugins
                 return false;
             return null;
         }
-
-        #region Creative Mode Hooks
-
-        // CHANGE: Единая точка переключения креатив-режима (используется меню действий на игроке и Быстрым меню админа)
-        // CHANGE: Дополнительно включает/выключает нативные серверные конвары Creative.*: каждая игровая проверка
-        // требует ОДНОВРЕМЕННО флаг игрока и конвар (player.IsInCreativeMode && Creative.freeBuild и т.п.),
-        // поэтому флаг без конвар не активирует большую часть креатив-возможностей.
-        private void ToggleCreativeMode(BasePlayer target)
-        {
-            if (target == null)
-                return;
-
-            if (!_creativePlayers.Contains(target.userID))
-            {
-                _creativePlayers.Add(target.userID);
-                ApplyCreativeConvars(true);
-                target.SetPlayerFlag(BasePlayer.PlayerFlags.IsDeveloper, false);
-                target.SetPlayerFlag(BasePlayer.PlayerFlags.CreativeMode, true);
-                target.Command("debug.setcreative_ui", true);
-                uint initialColor = GetPlayerContainerColor(target);
-                target.Command("client.SelectedShippingContainerBlockColour", initialColor);
-                target.SendNetworkUpdateImmediate();
-            }
-            else
-            {
-                _creativePlayers.Remove(target.userID);
-                target.SetPlayerFlag(BasePlayer.PlayerFlags.CreativeMode, false);
-                target.Command("debug.setcreative_ui", false);
-                target.SendNetworkUpdateImmediate();
-                RestoreCreativeConvarsIfNoneLeft();
-            }
-        }
-
-        /// <summary>
-        /// Включает нативные конвары Creative.* согласно конфигурации.
-        /// Инвариант: конвары без флага CreativeMode у игрока ничего не дают (все проверки игры —
-        /// конъюнкция «флаг + конвар»), поэтому глобальное включение безопасно для обычных игроков.
-        /// Инвариант: исходные значения конвар снимаются в снапшот перед первым включением и
-        /// восстанавливаются при выключении — ручные настройки владельца сервера не затираются.
-        /// </summary>
-        /// <param name="enabled">true — включить конвары (со снапшотом исходных значений), false — восстановить снапшот.</param>
-        private void ApplyCreativeConvars(bool enabled)
-        {
-            CreativeSettings cfg = _config.Creative;
-            if (cfg == null)
-                return;
-
-            if (enabled)
-            {
-                if (!_creativeConvarsSnapshotTaken)
-                {
-                    _creativeConvarsSnapshotTaken = true;
-                    _creativeConvarsSnapshot["creative.freebuild"] = ConVar.Creative.freeBuild;
-                    _creativeConvarsSnapshot["creative.freerepair"] = ConVar.Creative.freeRepair;
-                    _creativeConvarsSnapshot["creative.freeplacement"] = ConVar.Creative.freePlacement;
-                    _creativeConvarsSnapshot["creative.bypassholdtoplaceduration"] = ConVar.Creative.bypassHoldToPlaceDuration;
-                    _creativeConvarsSnapshot["creative.unlimitedio"] = ConVar.Creative.unlimitedIo;
-                    _creativeConvarsSnapshot["creative.alwaysonenabled"] = ConVar.Creative.alwaysOnEnabled;
-                }
-
-                SetServerVar("creative.freebuild", cfg.FreeBuild);
-                SetServerVar("creative.freerepair", cfg.FreeRepair);
-                SetServerVar("creative.freeplacement", cfg.FreePlacement);
-                SetServerVar(
-                    "creative.bypassholdtoplaceduration",
-                    cfg.BypassHoldToPlaceDuration
-                );
-                SetServerVar("creative.unlimitedio", cfg.UnlimitedIo);
-                SetServerVar("creative.alwaysonenabled", cfg.AlwaysOn);
-            }
-            else
-            {
-                if (!_creativeConvarsSnapshotTaken)
-                    return;
-
-                foreach (KeyValuePair<string, bool> kv in _creativeConvarsSnapshot)
-                    SetServerVar(kv.Key, kv.Value);
-
-                _creativeConvarsSnapshot.Clear();
-                _creativeConvarsSnapshotTaken = false;
-            }
-        }
-
-        /// <summary>
-        /// Возвращает конвары Creative.* в выключенное состояние, когда активных креатив-игроков не осталось.
-        /// Инвариант: вызывается только после удаления игрока из _creativePlayers.
-        /// </summary>
-        private void RestoreCreativeConvarsIfNoneLeft()
-        {
-            if (_creativePlayers.Count == 0)
-                ApplyCreativeConvars(false);
-        }
-
-        /// <summary>
-        /// Устанавливает серверную консольную переменную через консольную систему игры.
-        /// Предусловие: имя переменной существует на сервере.
-        /// Постусловие: при фактическом изменении значения Command.ValueChanged реплицирует значение
-        /// всем подключённым клиентам (прямое присваивание статического поля ConVar.Creative.* репликацию
-        /// не триггерит, и клиентский креатив-UI остался бы со старым значением до релога).
-        /// Сложность: O(1) по времени и памяти.
-        /// </summary>
-        /// <param name="name">Полное имя переменной, например "creative.freebuild".</param>
-        /// <param name="value">Целевое значение.</param>
-        private void SetServerVar(string name, bool value)
-        {
-            ConsoleSystem.Run(ConsoleSystem.Option.Server, name, value ? "1" : "0");
-        }
-
-        // CHANGE: Разрешение постройки чертежом без наличия ресурсов в инвентаре для креатив-режима
-        private object CanAffordToPlace(
-            BasePlayer player,
-            Planner planner,
-            Construction construction
-        )
-        {
-            if (player != null && _creativePlayers.Contains(player.userID))
-                return true;
-            return null;
-        }
-
-        // CHANGE: Отмена списания ресурсов при постройке чертежом для креатив-режима
-        private object OnPayForPlacement(
-            BasePlayer player,
-            Planner planner,
-            Construction construction
-        )
-        {
-            if (player != null && _creativePlayers.Contains(player.userID))
-                return false;
-            return null;
-        }
-
-        // CHANGE: Разрешение улучшения построек киянкой без наличия ресурсов для креатив-режима
-        private object CanAffordUpgrade(
-            BasePlayer player,
-            BuildingBlock block,
-            BuildingGrade.Enum grade,
-            ulong skin
-        )
-        {
-            if (player != null && _creativePlayers.Contains(player.userID))
-                return true;
-            return null;
-        }
-
-        private object CanAffordUpgrade(
-            BasePlayer player,
-            BuildingBlock block,
-            BuildingGrade.Enum grade
-        )
-        {
-            if (player != null && _creativePlayers.Contains(player.userID))
-                return true;
-            return null;
-        }
-
-        // CHANGE: Отмена списания ресурсов при улучшении построек киянкой для креатив-режима
-        private object OnPayForUpgrade(
-            BasePlayer player,
-            BuildingBlock block,
-            BuildingGrade.Enum grade
-        )
-        {
-            if (player != null && _creativePlayers.Contains(player.userID))
-                return false;
-            return null;
-        }
-
-        private object OnPayForUpgrade(
-            BasePlayer player,
-            BuildingBlock block,
-            ConstructionGrade grade
-        )
-        {
-            if (player != null && _creativePlayers.Contains(player.userID))
-                return false;
-            return null;
-        }
-
-        // CHANGE: Мгновенная бесплатная починка построек и конструкций киянкой для креатив-режима
-        private object OnStructureRepair(BaseCombatEntity entity, BasePlayer player)
-        {
-            if (player != null && _creativePlayers.Contains(player.userID) && entity != null)
-            {
-                if (entity.health < entity.MaxHealth())
-                {
-                    entity.Heal(entity.MaxHealth() - entity.health);
-                    entity.SendNetworkUpdate();
-                }
-                return false;
-            }
-            return null;
-        }
-
-        // CHANGE: Бесконечная установка деплоящихся предметов в креатив-режиме
-        // CHANGE: Возврат реализован выдачей НОВОГО предмета на следующем тике (а не item.amount++): это не зависит от порядка хуков и момента списания предмета игрой.
-        // CHANGE: Если сущность уничтожена в тот же тик (установка отклонена другим плагином, например RCraft, который сам возвращает предмет) — возврат не выполняется, дублирование исключено.
-        private void OnItemDeployed(Deployer deployer, BaseEntity entity)
-        {
-            if (entity == null || entity.IsDestroyed)
-                return;
-
-            BasePlayer player = deployer?.GetOwnerPlayer();
-            if (player != null && _creativePlayers.Contains(player.userID))
-            {
-                Item item = deployer.GetItem();
-                if (item != null)
-                {
-                    ItemDefinition itemDef = item.info;
-                    ulong itemSkin = item.skin;
-                    NextTick(() =>
-                    {
-                        if (entity.IsDestroyed)
-                            return;
-
-                        Item refund = ItemManager.CreateByItemID(
-                            itemDef.itemid,
-                            1,
-                            itemSkin
-                        );
-                        if (refund != null && !player.inventory.GiveItem(refund))
-                        {
-                            refund.Remove();
-                        }
-                    });
-                }
-            }
-        }
-
-        // CHANGE: Определение цвета контейнеров из настроек игрока (баллончик/колесо скинов) или из конфигурации
-        private uint GetPlayerContainerColor(BasePlayer player)
-        {
-            if (player == null)
-                return _config.General.DefaultContainerColor > 0 ? _config.General.DefaultContainerColor : 1u;
-
-            uint playerColor = BuildingBlock.GetShippingContainerBlockColourForPlayer(player);
-            if (playerColor > 0)
-                return playerColor;
-
-            if (_config.General.DefaultContainerColor > 0)
-                return _config.General.DefaultContainerColor;
-
-            return 1u;
-        }
-
-        // CHANGE: Упреждающая установка цвета контейнеров при размещении до вызова ChangeGradeAndSkin
-        private void OnConstructionPlace(
-            BaseEntity entity,
-            Construction component,
-            Construction.Target placement,
-            BasePlayer player
-        )
-        {
-            if (player != null && _creativePlayers.Contains(player.userID))
-            {
-                BuildingBlock block = entity as BuildingBlock;
-                if (block != null)
-                {
-                    uint targetColor = GetPlayerContainerColor(player);
-                    block.playerCustomColourToApply = targetColor;
-                }
-            }
-        }
-
-        // CHANGE: Фиксация цвета контейнеров из конфигурации/палитры игрока в NextTick (после отработки ChangeGradeAndSkin) для полного устранения мигания и рандомных цветов
-        private void OnEntityBuilt(Planner planner, GameObject gameObject)
-        {
-            BasePlayer player = planner?.GetOwnerPlayer();
-            if (player != null && _creativePlayers.Contains(player.userID))
-            {
-                BuildingBlock block = gameObject?.GetComponent<BuildingBlock>();
-                if (block != null)
-                {
-                    uint targetColor = GetPlayerContainerColor(player);
-                    block.playerCustomColourToApply = targetColor;
-                    NextTick(() =>
-                    {
-                        if (block != null && !block.IsDestroyed)
-                        {
-                            block.SetCustomColour(targetColor);
-                        }
-                    });
-                }
-            }
-        }
-
-        // CHANGE: Фиксация цвета контейнеров при улучшении без мигания
-        private void OnStructureUpgrade(
-            BuildingBlock block,
-            BasePlayer player,
-            BuildingGrade.Enum grade,
-            ulong skin
-        )
-        {
-            if (player != null && _creativePlayers.Contains(player.userID) && block != null)
-            {
-                uint targetColor = GetPlayerContainerColor(player);
-                block.playerCustomColourToApply = targetColor;
-                NextTick(() =>
-                {
-                    if (block != null && !block.IsDestroyed)
-                    {
-                        block.SetCustomColour(targetColor);
-                    }
-                });
-            }
-        }
-
-        private void OnStructureUpgrade(
-            BuildingBlock block,
-            BasePlayer player,
-            BuildingGrade.Enum grade
-        )
-        {
-            if (player != null && _creativePlayers.Contains(player.userID) && block != null)
-            {
-                uint targetColor = GetPlayerContainerColor(player);
-                block.playerCustomColourToApply = targetColor;
-                NextTick(() =>
-                {
-                    if (block != null && !block.IsDestroyed)
-                    {
-                        block.SetCustomColour(targetColor);
-                    }
-                });
-            }
-        }
-
-        #endregion
 
         // CHANGE: Блокировка перемещения предметов для скованных игроков
         private object CanMoveItem(
