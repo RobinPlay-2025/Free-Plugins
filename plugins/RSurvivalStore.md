@@ -4,7 +4,7 @@
 
 ## Информация
 - **Автор:** RustInnovate
-- **Версия:** 2.9.7
+- **Версия:** 2.10.7
 - **Категория:** Бесплатные плагины
 
 # RSurvivalStore
@@ -135,8 +135,3 @@
 * `bool GetAddonUIStatus(ulong userId)` — возвращает `true`, если у игрока открыта встроенная корзина.
 
 ---
-
-**Разработчик:** RustInnovate  
-**VK:** [vk.com/rustinnovate](https://vk.com/rustinnovate)  
-**Telegram:** [t.me/RobinPlay](https://t.me/RobinPlay)
-
