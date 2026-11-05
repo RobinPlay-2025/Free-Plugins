@@ -13,7 +13,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("RSurvivalStore", "RustInnovate", "2.9.7")]
+    [Info("RSurvivalStore", "RustInnovate", "2.10.7")]
     [Description(
         "Клиент RSurvivalStore с пользовательским интерфейсом на основе изображений, ScrollView и WipeBlock."
     )]
@@ -381,11 +381,7 @@ namespace Oxide.Plugins
                 try
                 {
                     byte[] data = File.ReadAllBytes(localPath);
-                    uint id = FileStorage.server.Store(
-                        data,
-                        FileStorage.Type.png,
-                        CommunityEntity.ServerInstance.net.ID
-                    );
+                    uint id = StorePngDualSlot(data);
                     _hudIconPngId = id.ToString();
                     return;
                 }
@@ -441,11 +437,7 @@ namespace Oxide.Plugins
                 try
                 {
                     byte[] data = File.ReadAllBytes(localPath);
-                    uint id = FileStorage.server.Store(
-                        data,
-                        FileStorage.Type.png,
-                        CommunityEntity.ServerInstance.net.ID
-                    );
+                    uint id = StorePngDualSlot(data);
                     _blueprintIconPngId = id.ToString();
                     return;
                 }
@@ -1062,11 +1054,7 @@ namespace Oxide.Plugins
                     try
                     {
                         byte[] data = File.ReadAllBytes(localPath);
-                        uint id = FileStorage.server.Store(
-                            data,
-                            FileStorage.Type.png,
-                            CommunityEntity.ServerInstance.net.ID
-                        );
+                        uint id = StorePngDualSlot(data);
                         _imageCache[logoLink] = id.ToString();
                     }
                     catch (Exception ex)
@@ -1111,6 +1099,27 @@ namespace Oxide.Plugins
             }
         }
 
+        // CHANGE: Клиент при числовом Png шлёт SV_RequestFile(part, crc), сервер ищет строку по слоту
+        // (entity, part). Запись только в part=0 давала cache-tombstone (crc=0, data=null) и кик
+        // "FileStorage cache contains a null file" на повторном запросе: QueryFile при отсутствии строки
+        // возвращает (0, null) как non-null, Find кэширует её (баг Facepunch в ExecuteAndReadQueryResult).
+        // Дублируем файл в оба слота — (entity, 0) и (entity, crc) — любой запрос клиента попадает в строку.
+        private static uint StorePngDualSlot(byte[] pngBytes)
+        {
+            uint crc = FileStorage.server.StoreByCrc(
+                CommunityEntity.ServerInstance.net.ID,
+                FileStorage.Type.png,
+                pngBytes
+            );
+            FileStorage.server.Store(
+                CommunityEntity.ServerInstance.net.ID,
+                0uL,
+                FileStorage.Type.png,
+                pngBytes
+            );
+            return crc;
+        }
+
         private System.Collections.IEnumerator DownloadImageCoroutine(
             string url,
             string localPath,
@@ -1133,11 +1142,7 @@ namespace Oxide.Plugins
                         try
                         {
                             System.IO.File.WriteAllBytes(localPath, bytes);
-                            uint id = FileStorage.server.Store(
-                                bytes,
-                                FileStorage.Type.png,
-                                CommunityEntity.ServerInstance.net.ID
-                            );
+                            uint id = StorePngDualSlot(bytes);
                             _imageCache[logoLink] = id.ToString();
                         }
                         catch (Exception ex)
