@@ -3,6 +3,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Text;
 using Newtonsoft.Json;
@@ -16,7 +17,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-        [Info("RRemove", "RustInnovate", "1.6.7")]
+        [Info("RRemove", "RustInnovate", "2.0.0")]
     [Description("Режимное удаление построек и предметов с возвратом ресурсов и GUI-индикатором")]
     public sealed class RRemove : RustPlugin
     {
@@ -183,6 +184,43 @@ namespace Oxide.Plugins
             // CHANGE: Требование шкафа: без авторизации в шкафу зоны автоапгрейд не работает.
             [JsonProperty("Требовать наличие шкафа для автоапгрейда (план+киянка)")]
             public bool UpgradeRequireCupboard = true;
+
+            // CHANGE: 1.7.0 — апгрейд всего здания: удар по блоку поднимает ВСЁ строение до
+            // CHANGE выбранного типа и скина (сценарий: макет из твиня + шкаф → готовый дом).
+            [JsonProperty("Включить апгрейд всего здания (удар по блоку апгрейдит всю постройку)")]
+            public bool EnableWholeUpgrade = true;
+
+            // CHANGE: Дефолт — отдельное право rremove.wholeupgrade: прежний дефолт
+            // CHANGE rremove.upgrade регистрировался в Oxide дважды (Duplicate permission
+            // CHANGE registered). Имя ключа конфига тоже сменилось: старый ключ Newtonsoft
+            // CHANGE игнорирует, и он исчезает из файла при первом сохранении — миграция
+            // CHANGE значения происходит автоматически без кода в LoadConfig.
+            [JsonProperty("Привилегия апгрейда всего здания")]
+            public string WholeUpgradePermission = PermWholeUpgrade;
+
+            // CHANGE: 1.7.0 — откат улучшений назад (камень → дерево): по умолчанию запрещён,
+            // CHANGE ваниль тоже не разрешает даунгрейд (HasUpgradePrivilege). Действует на
+            // CHANGE одиночный апгрейд и массовый апгрейд всего здания. Откат бесплатен
+            // CHANGE (платить за худший блок абсурдно), часть стоимости ТЕКУЩЕЙ марки
+            // CHANGE возвращается игроку (процент ниже; прежнее поведение одиночного
+            // CHANGE апгрейда брало ПОЛНУЮ стоимость худшего блока — дефект устранён).
+            [JsonProperty("Разрешить откатывать улучшение назад (Например: камень в дерево)")]
+            public bool AllowDowngrade = false;
+
+            [JsonProperty("Процент возврата ресурсов при откате (от стоимости текущей марки блока; 0 — без возврата)")]
+            public float DowngradeRefundPercent = 25f;
+
+            // CHANGE: Флаг «Бесплатный апгрейд всего здания» УДАЛЁН по требованию владельца:
+            // CHANGE бесплатный массовый апгрейд для обычных игроков недопустим; бесплатность
+            // CHANGE определяется ТОЛЬКО правом rremove.nocost — как у одиночного апгрейда.
+            [JsonProperty("Проигрывать эффект апгрейда на каждом блоке (апгрейд всего здания)")]
+            public bool WholeUpgradePlayEffect = true;
+
+            [JsonProperty("Блоков за один тик обработки апгрейда всего здания (производительность)")]
+            public int WholeUpgradeBatchSize = 20;
+
+            [JsonProperty("Интервал обработки тиков апгрейда всего здания (в секундах)")]
+            public float WholeUpgradeBatchInterval = 0.05f;
         }
 
         // CHANGE: Скины построек (DLC): скин выбирается для КАЖДОГО типа апгрейда отдельно и
@@ -320,6 +358,10 @@ namespace Oxide.Plugins
 
             [JsonProperty("Иконка — апгрейд: МВК")]
             public string HqmIcon = "assets/icons/level_top.png";
+
+            // CHANGE: 1.7.0 — пункт «Апгрейд всего здания» (спрайт задан пользователем).
+            [JsonProperty("Иконка — апгрейд всего здания")]
+            public string WholeUpgradeIcon = "assets/icons/upgrade.png";
         }
 
         internal sealed class RootPanelConfig
@@ -510,6 +552,11 @@ namespace Oxide.Plugins
         private const string PermUpgrade = "rremove.upgrade";
         private const string PermNoCost = "rremove.nocost";
 
+        // CHANGE: 1.7.0 — привилегия апгрейда всего здания вынесена в ОТДЕЛЬНОЕ право:
+        // CHANGE дефолт-копия rremove.upgrade регистрировалась в Oxide повторно и давала
+        // CHANGE «Duplicate permission registered 'rremove.upgrade' (by plugin 'RRemove')».
+        private const string PermWholeUpgrade = "rremove.wholeupgrade";
+
         // CHANGE: Привилегия бесплатного использования скинов построек (обход проверки владения DLC).
         private const string PermSkinsFree = "rremove.skinsfree";
 
@@ -536,6 +583,10 @@ namespace Oxide.Plugins
         {
             public RemoveMode Mode;
             public float ExpiresAt;
+
+            // CHANGE: Не отправляем одинаковый текст таймера в CUI после каждого удара.
+            // CHANGE: Значение обновляется только при смене отображаемой секунды.
+            public int LastShownSeconds;
         }
 
         // CHANGE: Состояние режима апгрейда: тип блока + скин постройки + момент истечения бездействия.
@@ -550,6 +601,11 @@ namespace Oxide.Plugins
             // CHANGE: 1.6.0 — выбранный в цветовом меню индекс цвета палитры (1-основной,
             // CHANGE: 0 — случайный цвет, ванильная семантика GetStartingDetailColour(0)).
             public uint Colour;
+
+            // CHANGE: 1.7.0 — подрежим «апгрейд всего здания»: удар киянкой по блоку
+            // CHANGE: поднимает всё строение (buildingID) до Grade/Skin, а не один блок.
+            public bool WholeBuilding;
+
             public float ExpiresAt;
         }
 
@@ -584,7 +640,37 @@ namespace Oxide.Plugins
 
         // CHANGE: 1.6.0 — тип апгрейда, ожидающий выбора цвета (между открытием цветового
         // CHANGE: меню и выбором цвета). Инвариант: запись существует только пока открыто меню.
-        private readonly Dictionary<ulong, BuildingGrade.Enum> pendingColourSelections = new();
+        // CHANGE: 1.7.0 — значение несёт и признак «апгрейд всего здания»: цветовое колесо
+        // CHANGE: открывается до активации любого из двух подрежимов.
+        private readonly Dictionary<ulong, (BuildingGrade.Enum Grade, bool Whole)> pendingColourSelections = new();
+
+        // CHANGE: 1.7.0 — очередь массового апгрейда: работа на игрока, обрабатывается пакетами
+        // CHANGE: по N блоков за тик (UpdateSurroundingEntities + перескин сотен блоков одним
+        // CHANGE: кадром давили бы на сервер). Работа умирает при выходе игрока с сервера.
+        private readonly Dictionary<ulong, WholeUpgradeJob> wholeUpgradeJobs = new();
+
+        // CHANGE: 1.7.0 — признак запланированного тика пакетной обработки (цепочка timer.Once
+        // CHANGE без поля Timer: тип Timer недоступен при нативной компиляции Carbon —
+        // см. комментарий к тикеру режимов).
+        private bool wholeUpgradeScheduled;
+
+        // CHANGE: 1.7.0 — снимок параметров массового апгрейда на момент удара: тип/скин/цвет
+        // CHANGE фиксируются, чтобы смена выбора в меню посреди обработки не рвала согласованность.
+        private sealed class WholeUpgradeJob
+        {
+            public ulong PlayerId;
+            public List<BuildingBlock> Blocks = new();
+            public BuildingGrade.Enum Grade;
+            public ulong Skin;
+            public uint Colour;
+            public bool Free;
+            public bool PlayEffect;
+            public int Index;
+            public int Upgraded;
+            public int SkippedCost;
+            public int SkippedSkin;
+            public bool FallbackToast;
+        }
 
         // CHANGE: Игровой скин постройки: BuildingGrade.skin — это Steam item definition ID
         // CHANGE: (владение проверяется по Steam-инвентарю игрока), alwaysUnlock — ванильный
@@ -604,10 +690,24 @@ namespace Oxide.Plugins
         private Plugin? raidBlockPlugin;
         private Plugin? combatBlockPlugin;
 
+        // CHANGE: Внутренний вызов глобального canRemove не должен повторно запускать
+        // CHANGE: ValidateRemove самого RRemove: OnHammerHit уже выполнил эту проверку.
+        // CHANGE: Внешние плагины по-прежнему получают canRemove через Interface.CallHook.
+        private bool skipOwnCanRemoveValidation;
+
         // CHANGE: Встроенная система блокировки (активна при false у флагов конфига):
         // CHANGE: ключ — userID, значение — момент снятия блокировки (Time.realtimeSinceStartup).
         private readonly Dictionary<ulong, float> builtinRaidBlocked = new();
         private readonly Dictionary<ulong, float> builtinCombatBlocked = new();
+        // CHANGE: Запись имеет короткий срок жизни, чтобы отменённый PveMode урон не накапливал состояние.
+        private sealed class PendingRaidDamage
+        {
+            public ulong AttackerId;
+            public float ExpiresAt;
+        }
+
+        // CHANGE: Взрыв только фиксирует атакующего; рейд-блок выдаётся после уничтожения этой конструкции.
+        private readonly Dictionary<NetworkableId, PendingRaidDamage> pendingRaidAttackers = new();
 
         // Инвариант: ключ — NetworkableId сущности; время её установки (только что поставленные объекты).
         private readonly Dictionary<NetworkableId, float> placedTimes = new();
@@ -652,6 +752,10 @@ namespace Oxide.Plugins
             // CHANGE: Привилегия бесплатных скинов построек (обход проверки владения DLC) берётся из конфига.
             permission.RegisterPermission(configData.Skins.FreeSkinPermission, this);
             permission.RegisterPermission(configData.Remove.IgnorePermission, this);
+            // CHANGE: 1.7.0 — привилегия апгрейда всего здания — отдельное право
+            // CHANGE rremove.wholeupgrade: прежний дефолт rremove.upgrade регистрировался
+            // CHANGE повторно, и Oxide писал «Duplicate permission registered».
+            permission.RegisterPermission(configData.Upgrade.WholeUpgradePermission, this);
             // CHANGE: Подсказка о бинде показывается до первого использования режима — факт
             // использования сохраняется в data-файле и переживает рестарты.
             knownUsers =
@@ -669,10 +773,13 @@ namespace Oxide.Plugins
             SyncSkinConfig();
             timer.Every(1f, UpdateTickers);
 
-            // CHANGE: Встроенная система блокировки (OnEntityTakeDamage) нужна только когда
-            // CHANGE: хотя бы один из запретов работает по ней (false в конфиге).
+            // CHANGE: Встроенная система использует OnEntityTakeDamage для фиксации взрыва и OnEntityKill для выдачи рейд-блока.
+            // CHANGE: Оба хука не нужны, когда рейд- и комбат-блок делегированы внешним плагинам.
             if (configData.Remove.BlockInRaidZone && configData.Remove.BlockInCombatBlock)
+            {
                 Unsubscribe(nameof(OnEntityTakeDamage));
+                Unsubscribe(nameof(OnEntityKill));
+            }
         }
 
         /// <summary>Гасит GUI и состояние всех игроков (таймеры плагина снимаются автоматически).</summary>
@@ -732,42 +839,46 @@ namespace Oxide.Plugins
                     DenyToast(builder, buildDeny, buildLeft);
                     return;
                 }
+                // CHANGE: 1.7.0 — в режиме «апгрейд всего здания» блок, построенный планом,
+                // CHANGE: поднимается по-прежнему одиночно: массовый апгрейд запускает только удар.
                 UpgradeBlock(builder, block, upgradeState);
             }
         }
 
         /// <summary>
-        /// Встроенная система блокировки (работает при false у флагов конфига):
-        /// взрыв по строению — рейдер (инициатор) и владелец получают рейд-блок;
-        /// ПВП-урон между игроками — обе стороны получают комбат-блок.
-        /// Длительности — из конфига (по умолчанию 5 минут).
-        /// Сложность: O(1) на вызов.
+        /// Встроенная система блокировки (работает при false у флагов конфига): взрыв только
+        /// запоминает атакующего для конструкции в зоне шкафа; рейд-блок выдаётся в OnEntityKill
+        /// после её фактического разрушения. PvP-урон ставит комбат-блок обеим сторонам.
+        /// Длительности — из конфига (по умолчанию 5 минут). Сложность: O(1) на вызов.
         /// </summary>
         private void OnEntityTakeDamage(BaseCombatEntity entity, HitInfo info)
         {
             if (info?.InitiatorPlayer is not { } attacker || entity == null || attacker.IsNpc)
                 return;
 
-            var now = Time.realtimeSinceStartup;
-
-            // Взрыв по любой постройке (включая свою) — рейд-блок инициатору и владельцу.
-            // CHANGE: Запись и уведомление — только когда встроенная система активна (флаг false).
+            // CHANGE: PveMode может отменить урон после этого хука; поэтому здесь нет рейд-блока,
+            // CHANGE: только запись для OnEntityKill, который вызывается лишь при реальном разрушении.
             if (
                 !configData.Remove.BlockInRaidZone
+                && entity is StabilityEntity
+                && entity.net != null
+                && entity.GetBuildingPrivilege() != null
                 && info.damageTypes != null
                 && info.damageTypes.Get(Rust.DamageType.Explosion) > 0f
-                && entity is StabilityEntity
             )
             {
-                var raidDuration = Mathf.Max(1, configData.Remove.BuiltinRaidBlockDuration);
-                builtinRaidBlocked[attacker.userID] = now + raidDuration;
-                if (entity.OwnerID != 0u && entity.OwnerID != attacker.userID)
-                    builtinRaidBlocked[entity.OwnerID] = now + raidDuration;
-
-                // CHANGE: GameTip «Инициализировался рейд» — рейдеру и владельцу (если онлайн).
-                NotifyRaidInitialized(attacker, raidDuration);
-                if (entity.OwnerID != 0u && BasePlayer.FindByID(entity.OwnerID) is { } owner && owner.userID != attacker.userID)
-                    NotifyRaidInitialized(owner, raidDuration);
+                var entityId = entity.net.ID;
+                pendingRaidAttackers[entityId] = new PendingRaidDamage
+                {
+                    AttackerId = attacker.userID,
+                    ExpiresAt = Time.realtimeSinceStartup + 10f,
+                };
+                // CHANGE: Отменённый PveMode урон не приводит к бессрочному накоплению ожиданий.
+                timer.Once(10f, () =>
+                {
+                    if (pendingRaidAttackers.TryGetValue(entityId, out var pending) && pending.ExpiresAt <= Time.realtimeSinceStartup)
+                        pendingRaidAttackers.Remove(entityId);
+                });
             }
 
             // ПВП-урон — комбат-блок обеим сторонам (только при встроенной системе).
@@ -778,9 +889,38 @@ namespace Oxide.Plugins
                 && victim.userID != attacker.userID
             )
             {
-                var until = now + Mathf.Max(1, configData.Remove.BuiltinCombatBlockDuration);
+                var until = Time.realtimeSinceStartup + Mathf.Max(1, configData.Remove.BuiltinCombatBlockDuration);
                 builtinCombatBlocked[attacker.userID] = until;
                 builtinCombatBlocked[victim.userID] = until;
+            }
+        }
+
+        /// <summary>
+        /// Выдаёт встроенный рейд-блок после фактического уничтожения конструкции, ранее получившей
+        /// взрывной урон в зоне строительного шкафа. Предусловие: атакующий зафиксирован в OnEntityTakeDamage.
+        /// Постусловие: рейдер и владелец получают блок на настроенную длительность. Сложность: O(1).
+        /// </summary>
+        private void OnEntityKill(BaseNetworkable networkable)
+        {
+            if (networkable is not BaseEntity entity || entity.net == null || !pendingRaidAttackers.TryGetValue(entity.net.ID, out var pendingRaidDamage))
+                return;
+
+            pendingRaidAttackers.Remove(entity.net.ID);
+            if (pendingRaidDamage.ExpiresAt <= Time.realtimeSinceStartup || configData.Remove.BlockInRaidZone || entity is not StabilityEntity)
+                return;
+
+            var attackerId = pendingRaidDamage.AttackerId;
+
+            var raidDuration = Mathf.Max(1, configData.Remove.BuiltinRaidBlockDuration);
+            builtinRaidBlocked[attackerId] = Time.realtimeSinceStartup + raidDuration;
+            if (BasePlayer.FindByID(attackerId) is { } attacker)
+                NotifyRaidInitialized(attacker, raidDuration);
+
+            if (entity.OwnerID != 0u && entity.OwnerID != attackerId)
+            {
+                builtinRaidBlocked[entity.OwnerID] = Time.realtimeSinceStartup + raidDuration;
+                if (BasePlayer.FindByID(entity.OwnerID) is { } owner)
+                    NotifyRaidInitialized(owner, raidDuration);
             }
         }
 
@@ -789,8 +929,12 @@ namespace Oxide.Plugins
             Toast(player, Msg(player, "RaidInitialized").Replace(
                 "{0}", duration.ToString(CultureInfo.InvariantCulture)));
 
-        /// <summary>Чистит время установки уничтоженных сущностей (защита от роста словаря).</summary>
-        private void OnEntityDestroyed(NetworkableId id) => placedTimes.Remove(id);
+        /// <summary>Чистит время установки и ожидающего атакующего уничтоженных сущностей.</summary>
+        private void OnEntityDestroyed(NetworkableId id)
+        {
+            placedTimes.Remove(id);
+            pendingRaidAttackers.Remove(id);
+        }
 
         /// <summary>
         /// Подсказка с готовой командой бинда клавиши активации.
@@ -856,8 +1000,16 @@ namespace Oxide.Plugins
         protected override void LoadDefaultMessages()
         {
             // CHANGE: 1.5.0 — английский словарь переведён на английский (раньше был копией русского).
-            lang.RegisterMessages(
-                new Dictionary<string, string>
+            // CHANGE: Серверный lang-оверлей читается и мержится ДО первой регистрации RegisterMessages:
+            // Oxide (Lang.MergeMessages) вырезает из зарегистрированного словаря все ключи, которых
+            // нет в коде, а последующие регистрации обновляют только файл, но не снимок в памяти
+            // (langFiles замораживается на первом обращении к lang API) — ключи, добавленные сервером
+            // в lang/<язык>/RRemove.json (например, имя кастомного скина), терялись бы при загрузке
+            // безвозвратно. Раньше оверлей читался уже после вырезания и через DataFileSystem —
+            // см. ReadLangFileOverlay.
+            var overlayEn = ReadLangFileOverlay("en");
+            var overlayRu = ReadLangFileOverlay("ru");
+            var namesEn = new Dictionary<string, string>
                 {
                     ["NoPermission"] = "You don't have permission to use this command.",
                     ["BindHint"] = "Remove mode: run this once in the console (F1): bind {key} rremove.menu",
@@ -906,6 +1058,8 @@ namespace Oxide.Plugins
                     ["GradeMetal"] = "Metal",
                     ["GradeHqm"] = "HQM",
                     ["UpgradeNoResources"] = "Not enough resources for the upgrade.",
+                    // CHANGE: 1.7.0 — откат улучшений назад (камень → дерево), конфиг AllowDowngrade.
+                    ["DowngradeDisabled"] = "Downgrading building grade is disabled on this server.",
                     ["UpgradeNoBuildAuth"] = "You are not authorized to build here.",
                     ["UpgradeNoCupboard"] = "Auto-upgrade requires authorization in this building's tool cupboard.",
                     ["RaidBlockDenied"] = "You are raid-blocked: the radial menu, remove and upgrade are unavailable. Time left: {0} s",
@@ -922,12 +1076,22 @@ namespace Oxide.Plugins
                     ["PieColourRandom"] = "Random colour",
                     ["PieColourRandomDesc"] = "Each upgraded block gets a random palette colour",
                     ["PieColourCancelDesc"] = "Cancel: the upgrade mode will not start",
-                },
-                this,
-                "en"
-            );
-            lang.RegisterMessages(
-                new Dictionary<string, string>
+                    // CHANGE: 1.7.0 — подменю типа апгрейда («Всё здание»/«Один блок») и тосты
+                    // CHANGE массового апгрейда. Ключи НОВЫЕ (PieGrade*): старые значения
+                    //PieWholeUpgrade* в lang-файлах сервера перебили бы новые надписи оверлеем.
+                    ["PieGradeWhole"] = "Whole building",
+                    ["PieGradeWholeDesc"] = "Hit a block — the whole building becomes this type with the selected skin",
+                    ["PieGradeSingle"] = "Single block",
+                    ["PieGradeSingleDesc"] = "Only the hit block upgrades",
+                    ["GuiWholeUpgradeTitle"] = "WHOLE BUILDING UPGRADE",
+                    ["GuiWholeUpgradeHint"] = "Hit a block — the entire building upgrades",
+                    ["WholeUpgradeStarted"] = "Building upgrade started: {0} block(s)",
+                    ["WholeUpgradeDone"] = "Building upgrade finished: {0} block(s) upgraded",
+                    ["WholeUpgradeSkipped"] = "Skipped {0} block(s) — not enough resources",
+                };
+            MergeOverlay(namesEn, overlayEn);
+            lang.RegisterMessages(namesEn, this, "en");
+            var namesRu = new Dictionary<string, string>
                 {
                     ["NoPermission"] = "У вас нет прав на использование этой команды.",
                     ["BindHint"] = "Режим удаления: выполните один раз в консоли (F1): bind {key} rremove.menu",
@@ -978,6 +1142,8 @@ namespace Oxide.Plugins
                     ["GradeMetal"] = "Металл",
                     ["GradeHqm"] = "МВК",
                     ["UpgradeNoResources"] = "Недостаточно ресурсов для апгрейда.",
+                    // CHANGE: 1.7.0 — откат улучшений назад (камень → дерево), конфиг AllowDowngrade.
+                    ["DowngradeDisabled"] = "Откат улучшений запрещён на этом сервере.",
                     ["UpgradeNoBuildAuth"] = "Вы не авторизованы для строительства здесь.",
                     ["UpgradeNoCupboard"] = "Для автоапгрейда нужна авторизация в шкафу этого строения.",
                     ["RaidBlockDenied"] = "Вы в рейд-блоке: радиальное меню, ремув и апгрейд недоступны. Осталось: {0} с",
@@ -995,10 +1161,68 @@ namespace Oxide.Plugins
                     ["PieColourRandom"] = "Случайный цвет",
                     ["PieColourRandomDesc"] = "Каждый апгрейдный блок получает случайный цвет палитры",
                     ["PieColourCancelDesc"] = "Отмена: режим апгрейда не запустится",
-                },
-                this,
-                "ru"
-            );
+                    // CHANGE: 1.7.0 — подменю типа апгрейда («Всё здание»/«Один блок») и тосты
+                    // CHANGE массового апгрейда. Ключи НОВЫЕ (PieGrade*): старые значения
+                    //PieWholeUpgrade* в lang-файлах сервера перебили бы новые надписи оверлеем.
+                    ["PieGradeWhole"] = "Всё здание",
+                    ["PieGradeWholeDesc"] = "Удар по блоку — всё строение станет этим типом со скином",
+                    ["PieGradeSingle"] = "Один блок",
+                    ["PieGradeSingleDesc"] = "Апгрейд только задетого блока",
+                    ["GuiWholeUpgradeTitle"] = "АПГРЕЙД ВСЕГО СТРОЕНИЯ",
+                    ["GuiWholeUpgradeHint"] = "Ударьте по блоку — строение целиком станет выбранным типом",
+                    ["WholeUpgradeStarted"] = "Апгрейд строения запущен: {0} блок(ов)",
+                    ["WholeUpgradeDone"] = "Апгрейд строения завершён: {0} блок(ов) поднято",
+                    ["WholeUpgradeSkipped"] = "Пропущено блоков: {0} — не хватило ресурсов",
+                };
+            MergeOverlay(namesRu, overlayRu);
+            lang.RegisterMessages(namesRu, this, "ru");
+        }
+
+        /// <summary>
+        /// Читает серверный lang-оверлей напрямую из каталога локализации
+        /// (Interface.Oxide.LangDirectory/&lt;язык&gt;/&lt;Title&gt;.json), а не через DataFileSystem.
+        /// CHANGE: раньше файл читался через Interface.Oxide.DataFileSystem ("lang/{язык}/{Title}"):
+        /// DataFileSystem разрешает имена относительно папки data, а ReadObject при отсутствии
+        /// файла создаёт экземпляр по умолчанию и ПИШЕТ его на диск (DynamicConfigFile.WriteObject
+        /// попутно создаёт недостающие каталоги) — отсюда мусорная папка data/lang с пустыми
+        /// RRemove.json при каждом старте. Настоящие lang-файлы Oxide живут в oxide/lang —
+        /// путь через DataFileSystem указывал в data/lang, и оверлей не видел правок сервера.
+        /// Постусловие: null — файл отсутствует или повреждён; иначе прочитанный словарь пар.
+        /// Сложность: O(n), n — число ключей файла; два вызова за загрузку плагина.
+        /// </summary>
+        private Dictionary<string, string>? ReadLangFileOverlay(string langCode)
+        {
+            try
+            {
+                var path = Path.Combine(Interface.Oxide.LangDirectory, langCode, Title + ".json");
+                if (!File.Exists(path))
+                    return null;
+                return JsonConvert.DeserializeObject<Dictionary<string, string>>(
+                    File.ReadAllText(path));
+            }
+            catch (Exception ex)
+            {
+                // Повреждённый файл не должен ломать регистрацию сообщений — работаем на кодовом словаре.
+                Puts($"[RRemove] Не удалось прочитать lang/{langCode}/{Title}.json: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Мержит серверный оверлей в целевой словарь: значения оверлея имеют приоритет.
+        /// Предусловие: target — не null. Постусловие: target содержит все непустые пары оверлея.
+        /// Сложность: O(n), n — размер оверлея.
+        /// </summary>
+        private static void MergeOverlay(
+            Dictionary<string, string> target, Dictionary<string, string>? overlay)
+        {
+            if (overlay == null)
+                return;
+            foreach (var pair in overlay)
+            {
+                if (!string.IsNullOrEmpty(pair.Key) && pair.Value != null)
+                    target[pair.Key] = pair.Value;
+            }
         }
 
         /// <summary>
@@ -1227,8 +1451,13 @@ namespace Oxide.Plugins
         /// X → vehicle.swapseats, F → inventory.lighttoggle. Открывает радиальное меню без бинда.
         /// Конфиг: RemoveSettings.MenuOpenButton (X | F | OFF). Инвариант: перехват только у игроков
         /// с правом rremove.use/rremove.admin; вне рейд/комбат-блока.
+        /// Постусловие: null — команда не перехвачена и идёт дальше в игру; true — кнопка перехвачена,
+        /// меню откроется следующим тиком. null — легальное значение контракта хука Oxide.
         /// </summary>
-        private object OnServerCommand(ConsoleSystem.Arg arg)
+        // CHANGE: возвращаемый тип object → object?: null — часть контракта хука OnServerCommand,
+        // гасит CS8603 на всех return null внутри метода. IL-сигнатура не меняется (аннотация стирается),
+        // биндинг хуков Oxide не зависит от возвращаемого типа.
+        private object? OnServerCommand(ConsoleSystem.Arg arg)
         {
             if (arg == null || arg.cmd == null || menuOpenButton == 0)
                 return null;
@@ -1319,8 +1548,9 @@ namespace Oxide.Plugins
         private void ConsoleCmdGradeHqm(ConsoleSystem.Arg arg) => HandleGradeSelection(arg, BuildingGrade.Enum.TopTier);
 
         /// <summary>
-        /// Обработчик выбора типа апгрейда: включает режим; повторный выбор того же типа выключает.
-        /// Предусловие: право rremove.upgrade (или rremove.admin).
+        /// Обработчик выбора типа апгрейда в главном меню: открывает подменю области
+        /// применения — «Всё здание» или «Один блок» (активация — rremove.grade.apply).
+        /// Предусловие: право rremove.upgrade.
         /// </summary>
         private void HandleGradeSelection(ConsoleSystem.Arg arg, BuildingGrade.Enum grade)
         {
@@ -1337,19 +1567,9 @@ namespace Oxide.Plugins
                 return;
             }
 
-            if (activeRemovers.ContainsKey(player.userID))
-                Deactivate(player.userID);
-
-            if (upgradeGrades.TryGetValue(player.userID, out var current) && current.Grade == grade)
-            {
-                DeactivateUpgrade(player.userID);
-                return;
-            }
-            // CHANGE: 1.6.0 — если у выбранного скина есть палитра (контейнеры), перед
-            // CHANGE: активацией режима (до появления таймера) открывается радиальное меню
-            // CHANGE: выбора цвета — как колесо баллончика; иначе режим запускается сразу.
-            if (!TryOpenColourSelection(player, grade))
-                ActivateUpgrade(player, grade);
+            // CHANGE: 1.7.0 — активация перенесена в подменю: после выбора типа игрок
+            // CHANGE выбирает область применения («Всё здание» / «Один блок»).
+            SendGradeSubmenu(player, grade);
         }
 
         #region Выбор цвета (колесо баллончика, 1.6.0)
@@ -1364,13 +1584,14 @@ namespace Oxide.Plugins
         /// Случайный] лёг по часовой с «Цвет N» на 12 часах), поэтому палитра добавляется
         /// в естественном порядке 1..N: цвет N замыкает круг перед «Закрыть»,
         /// «Случайный» граничит с цветом 1.
-        /// Предусловия: игрок подключен; grade — тип апгрейда из меню.
+        /// Предусловия: игрок подключен; grade — тип апгрейда из меню; whole — подрежим
+        /// («апгрейд всего здания»), до активации сохраняется в pending-записи.
         /// Постусловие: true — меню отправлено, активация режима отложена до выбора цвета
         /// (запись в pendingColourSelections); false — палитры нет/функция выключена,
         /// режим нужно активировать немедленно.
         /// Сложность: O(k), k — размер палитры (до 16 цветов ванили).
         /// </summary>
-        private bool TryOpenColourSelection(BasePlayer player, BuildingGrade.Enum grade)
+        private bool TryOpenColourSelection(BasePlayer player, BuildingGrade.Enum grade, bool whole)
         {
             if (!configData.Skins.EnableColourSelection)
                 return false;
@@ -1380,7 +1601,7 @@ namespace Oxide.Plugins
             if (!CanUseBuildingSkin(player, skinId, IsAlwaysUnlocked(grade, skinId)))
                 return false;
 
-            pendingColourSelections[player.userID] = grade;
+            pendingColourSelections[player.userID] = (grade, whole);
             var pie = Pool.Get<ProtoBuf.CustomPie>();
             try
             {
@@ -1438,27 +1659,30 @@ namespace Oxide.Plugins
             return true;
         }
 
-        /// <summary>Команды выбора цвета: rremove.colour.&lt;тип&gt; &lt;индекс|0 — случайный&gt;.</summary>
+        /// <summary>Команды выбора цвета: rremove.colour.&lt;тип&gt; &lt;индекс|0 — случайный&gt;.
+        /// CHANGE: 1.7.0 — тип и подрежим читаются из pending-записи (она ставится при открытии
+        /// колеса), параметр grade обработчику больше не нужен.</summary>
         [ConsoleCommand("rremove.colour.wood")]
-        private void ConsoleCmdColourWood(ConsoleSystem.Arg arg) => HandleColourSelection(arg, BuildingGrade.Enum.Wood);
+        private void ConsoleCmdColourWood(ConsoleSystem.Arg arg) => HandleColourSelection(arg);
 
         [ConsoleCommand("rremove.colour.stone")]
-        private void ConsoleCmdColourStone(ConsoleSystem.Arg arg) => HandleColourSelection(arg, BuildingGrade.Enum.Stone);
+        private void ConsoleCmdColourStone(ConsoleSystem.Arg arg) => HandleColourSelection(arg);
 
         [ConsoleCommand("rremove.colour.metal")]
-        private void ConsoleCmdColourMetal(ConsoleSystem.Arg arg) => HandleColourSelection(arg, BuildingGrade.Enum.Metal);
+        private void ConsoleCmdColourMetal(ConsoleSystem.Arg arg) => HandleColourSelection(arg);
 
         [ConsoleCommand("rremove.colour.hqm")]
-        private void ConsoleCmdColourHqm(ConsoleSystem.Arg arg) => HandleColourSelection(arg, BuildingGrade.Enum.TopTier);
+        private void ConsoleCmdColourHqm(ConsoleSystem.Arg arg) => HandleColourSelection(arg);
 
         /// <summary>
         /// Обработчик выбора цвета: запоминает цвет типа и активирует режим апгрейда
         /// (теперь появляется таймер режима). Закрытие меню без выбора — отмена активации.
-        /// Предусловия: право rremove.upgrade, тип ожидает выбора цвета (pendingColourSelections).
+        /// Предусловия: право подрежима (rremove.upgrade или привилегия «апгрейда всего
+        /// здания»), тип ожидает выбора цвета (pendingColourSelections).
         /// Постусловие: выбран цвет (0 — случайный), режим апгрейда активирован.
         /// Сложность: O(1).
         /// </summary>
-        private void HandleColourSelection(ConsoleSystem.Arg arg, BuildingGrade.Enum grade)
+        private void HandleColourSelection(ConsoleSystem.Arg arg)
         {
             if (arg == null)
                 return;
@@ -1467,9 +1691,15 @@ namespace Oxide.Plugins
                 return;
             // CHANGE: Меню выбора цвета открывается только из обработчика выбора типа —
             // если запись не найдена (меню протухло/плагин перезагружен), выбор игнорируется.
-            if (!pendingColourSelections.Remove(player.userID))
+            if (!pendingColourSelections.TryGetValue(player.userID, out var pending))
                 return;
-            if (!permission.UserHasPermission(player.UserIDString, PermUpgrade))
+            pendingColourSelections.Remove(player.userID);
+            // CHANGE: 1.7.0 — право проверяется по подрежиму из pending-записи: у «апгрейда
+            // CHANGE: всего здания» своя привилегия из конфига (rremove.wholeupgrade).
+            var requiredPerm = pending.Whole
+                ? configData.Upgrade.WholeUpgradePermission
+                : PermUpgrade;
+            if (!permission.UserHasPermission(player.UserIDString, requiredPerm))
             {
                 Toast(player, Msg(player, "NoPermission"));
                 return;
@@ -1478,8 +1708,8 @@ namespace Oxide.Plugins
             var index = Mathf.Clamp(arg.GetInt(0, 0), 0, int.MaxValue);
             if (!selectedColours.TryGetValue(player.userID, out var prefs))
                 selectedColours[player.userID] = prefs = new Dictionary<BuildingGrade.Enum, uint>();
-            prefs[grade] = (uint)index;
-            ActivateUpgrade(player, grade);
+            prefs[pending.Grade] = (uint)index;
+            ActivateUpgrade(player, pending.Grade, pending.Whole);
         }
 
         /// <summary>Выбранный игроком цвет типа. Постусловие: 0 — случайный цвет палитры.</summary>
@@ -1490,8 +1720,12 @@ namespace Oxide.Plugins
 
         #endregion Выбор цвета (колесо баллончика, 1.6.0)
 
-        /// <summary>Включает режим апгрейда: отсчёт таймера от длительности из конфига, GUI с типом и таймером.</summary>
-        private void ActivateUpgrade(BasePlayer player, BuildingGrade.Enum grade)
+        /// <summary>
+        /// Включает режим апгрейда: отсчёт таймера от длительности из конфига, GUI с типом и таймером.
+        /// CHANGE: 1.7.0 — параметр wholeBuilding включает подрежим «апгрейд всего здания»;
+        /// выбранный тип запоминается как цель для пункта «Апгрейд всего здания».
+        /// </summary>
+        private void ActivateUpgrade(BasePlayer player, BuildingGrade.Enum grade, bool wholeBuilding = false)
         {
             var duration = Mathf.Max(1f, configData.Upgrade.UpgradeModeDuration);
             upgradeGrades[player.userID] = new UpgradeState
@@ -1501,9 +1735,11 @@ namespace Oxide.Plugins
                 Skin = GetSelectedSkin(player.userID, grade),
                 // CHANGE: 1.6.0 — цвет палитры, выбранный в колесе баллончика (0 — случайный).
                 Colour = GetSelectedColour(player.userID, grade),
+                // CHANGE: 1.7.0 — подрежим «апгрейд всего здания» (удар по блоку — всё строение).
+                WholeBuilding = wholeBuilding,
                 ExpiresAt = Time.realtimeSinceStartup + duration,
             };
-            ShowUpgradeUi(player, grade, Mathf.CeilToInt(duration));
+            ShowUpgradeUi(player, grade, wholeBuilding, Mathf.CeilToInt(duration));
         }
 
         /// <summary>Выключает режим апгрейда: гасит GUI и снимает состояние.</summary>
@@ -1546,14 +1782,12 @@ namespace Oxide.Plugins
                 Toast(player, Msg(player, "SkinFallback"));
             }
             // CHANGE: No-op учитывает скин и цвет: полное совпадение (марка + скин + цвет)
-            // CHANGE: — единственный no-op; перескин и перекраска той же марки — легитимные
-            // CHANGE: действия (ваниль считает их дешевле — 20% стоимости, см.
-            // CHANGE: ConstructionGrade.UpdateCosts), случайный цвет (0) перекрашивает блок.
-            var colourNoop = state.Skin == 0UL
-                || !colourPalettes.ContainsKey(state.Skin)
-                || state.Colour == 0u
-                || block.customColour == state.Colour;
-            if (block.grade == grade && block.skinID == state.Skin && colourNoop)
+            // CHANGE — единственный no-op; перескин и перекраска той же марки — легитимные
+            // CHANGE действия (ваниль считает их дешевле — 20% стоимости, см.
+            // CHANGE ConstructionGrade.UpdateCosts), случайный цвет (0) перекрашивает блок.
+            // CHANGE: 1.7.0 — предикат вынесен в IsUpgradeNoop и переиспользуется
+            // CHANGE массовым апгрейдом всего здания.
+            if (IsUpgradeNoop(block, grade, state.Skin, state.Colour, colourPalettes.ContainsKey(state.Skin)))
                 return;
             if (!player.CanBuild())
             {
@@ -1593,7 +1827,19 @@ namespace Oxide.Plugins
                 Toast(player, Msg(player, "SkinFallback"));
 
             var noCost = permission.UserHasPermission(player.UserIDString, PermNoCost);
-            if (!noCost)
+            // CHANGE: 1.7.0 — откат улучшения (целевая марка ниже текущей): ваниль даунгрейд
+            // CHANGE запрещает, поэтому решает конфиг AllowDowngrade. Откат бесплатен,
+            // CHANGE часть стоимости ТЕКУЩЕЙ марки возвращается игроку (DowngradeRefundPercent).
+            if (block.grade > grade)
+            {
+                if (!configData.Upgrade.AllowDowngrade)
+                {
+                    Toast(player, Msg(player, "DowngradeDisabled"));
+                    return;
+                }
+                RefundDowngradeCost(player, block);
+            }
+            else if (!noCost)
             {
                 // CHANGE: Стоимость считается по паре (тип, скин): перескин той же марки дешевле.
                 if (!block.CanAffordUpgrade(grade, skinGrade.gradeBase.skin, player))
@@ -1609,7 +1855,12 @@ namespace Oxide.Plugins
             // CHANGE: Цвет передаётся ТОЛЬКО для скинов с палитрой: у прочих скинов
             // CHANGE: currentSkin == null и вызов GetStartingDetailColour падал бы NRE
             // CHANGE: (Assembly-CSharp_chunk5:14802 — color.HasValue ? currentSkin.…).
-            var paletteColour = state.Skin != 0UL && colourPalettes.ContainsKey(state.Skin)
+            // CHANGE: 1.7.0 — цвет палитры привязан к ФАКТИЧЕСКИ применённому скину блока
+            // CHANGE (skinGrade.gradeBase.skin), а не к выбранному: при откате пары (тип, скин)
+            // CHANGE на стандартный скин currentSkin == null, и передача цвета дала бы NRE в
+            // CHANGE GetStartingDetailColour (см. выше: цвет только для скинов с палитрой).
+            var paletteColour = skinGrade.gradeBase.skin != 0UL
+                && colourPalettes.ContainsKey(skinGrade.gradeBase.skin)
                 ? state.Colour
                 : (uint?)null;
             block.ChangeGradeAndSkin(
@@ -1625,8 +1876,423 @@ namespace Oxide.Plugins
         }
 
         /// <summary>
-        /// Отправляет игроку нативное радиальное меню (RPC OpenPie) с тремя режимами и пунктом закрытия.
-        /// Инвариант: menuAdmin/menuAll помечены disabled для игроков без rremove.admin — выбор блокируется на клиенте.
+        /// Возвращает игроку процент от стоимости ТЕКУЩЕЙ марки блока при откате улучшения
+        /// (камень → дерево): базис — полная стоимость текущей марки (CostToBuild без
+        /// fromGrade — тот же источник, что у возврата при удалении RefundBuildingBlock).
+        /// Инварианты: процент клампится в [0; 100], 0 — возврата нет; вызывается только
+        /// при разрешённом откате (AllowDowngrade) и только для понижения марки;
+        /// сумма округляется вверх (Mathf.CeilToInt) — дробных возвратов не бывает.
+        /// Сложность: O(k), k — позиций стоимости марки.
+        /// </summary>
+        private void RefundDowngradeCost(BasePlayer player, BuildingBlock block)
+        {
+            var percent = Mathf.Clamp(configData.Upgrade.DowngradeRefundPercent, 0f, 100f) / 100f;
+            if (percent <= 0f)
+                return;
+            var definition = block.blockDefinition;
+            if (definition?.grades == null)
+                return;
+            var gradeIndex = Mathf.Clamp((int)block.grade, 0, definition.grades.Length - 1);
+            var grade = definition.grades[gradeIndex];
+            if (grade == null)
+                return;
+            foreach (var cost in grade.CostToBuild())
+                GiveRefund(player, cost.itemid, Mathf.CeilToInt(cost.amount * percent));
+        }
+
+        #region Апгрейд всего здания (1.7.0)
+
+        /// <summary>
+        /// Подменю области применения типа апгрейда (нативное pie-меню): открывается после
+        /// выбора типа (дерево/камень/металл/МВК) в главном меню и предлагает «Всё здание»
+        /// (спрайт assets/icons/upgrade.png из конфига) или «Один блок» (иконка типа из
+        /// конфига), плюс «Закрыть». Обе команды несут тип и режим:
+        /// rremove.grade.apply &lt;wood|stone|metal|hqm&gt; &lt;whole|single&gt;.
+        /// Инварианты: пункт «Всё здание» ПОЛНОСТЬЮ отсутствует при выключенной функции
+        /// или отсутствии права rremove.wholeupgrade (не disabled — паттерн админских
+        /// пунктов главного меню); в центре колеса у обоих пунктов виден выбранный скин.
+        /// Сложность: O(1).
+        /// </summary>
+        private void SendGradeSubmenu(BasePlayer player, BuildingGrade.Enum grade)
+        {
+            var pie = Pool.Get<ProtoBuf.CustomPie>();
+            try
+            {
+                pie.menus = Pool.Get<List<ProtoBuf.CustomPieMenu>>();
+                var pieConfig = configData.Gui.Pie;
+                var apply = $"rremove.grade.apply {GradeKey(grade)}";
+                // CHANGE: Строка скина видна в обоих пунктах: скин выбирается пейджером Q/E
+                // CHANGE в главном меню и применяется к любому из двух режимов.
+                var skinLine = string.Format(Msg(player, "PieSkinCurrent"), SelectedSkinName(player, grade));
+
+                // CHANGE: «Всё здание» скрыто без функции/права — серые неактивные секторы
+                // CHANGE вводили в заблуждение (паттерн админских пунктов главного меню).
+                if (
+                    configData.Upgrade.EnableWholeUpgrade
+                    && permission.UserHasPermission(player.UserIDString, configData.Upgrade.WholeUpgradePermission)
+                )
+                {
+                    AddPieOption(
+                        pie, Msg(player, "PieGradeWhole"),
+                        $"{Msg(player, "PieGradeWholeDesc")}\n{skinLine}",
+                        $"{apply} whole", pieConfig.WholeUpgradeIcon, disabled: false);
+                }
+
+                AddPieOption(
+                    pie, Msg(player, "PieGradeSingle"),
+                    $"{Msg(player, "PieGradeSingleDesc")}\n{skinLine}",
+                    $"{apply} single", GradePieIcon(grade), disabled: false);
+
+                AddPieOption(
+                    pie, Msg(player, "PieClose"), Msg(player, "PieCloseDesc"),
+                    string.Empty, pieConfig.CloseIcon, disabled: false);
+                CommunityEntity.ServerInstance.SendPie(player, pie);
+            }
+            finally
+            {
+                pie.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Применяет выбор подменю типа апгрейда (rremove.grade.apply &lt;тип&gt; &lt;режим&gt;):
+        /// включает режим «всё здание» или «один блок» с выбранным типом и скином.
+        /// Повторный выбор того же типа И того же режима выключает режим; другой режим или
+        /// тип — переключает. Скин с палитрой открывает колесо выбора цвета до активации.
+        /// Инварианты: неизвестный тип/режим из консоли молча игнорируется (fail-closed);
+        /// право: rremove.wholeupgrade для «всего здания», rremove.upgrade для «одного блока».
+        /// Постусловие: режим активирован/выключен, GUI обновлён.
+        /// Сложность: O(1).
+        /// </summary>
+        [ConsoleCommand("rremove.grade.apply")]
+        private void ConsoleCmdGradeApply(ConsoleSystem.Arg arg)
+        {
+            var player = arg?.Player();
+            if (player == null || !player.IsConnected)
+                return;
+            if (!configData.Upgrade.EnableAutoUpgrade)
+                return;
+            // CHANGE: Аргументы зашиты в пункты подменю; прямой консольный вызов с
+            // CHANGE неизвестным типом/режимом молча игнорируется (fail-closed).
+            var grade = arg.GetString(0, string.Empty) switch
+            {
+                "wood" => BuildingGrade.Enum.Wood,
+                "stone" => BuildingGrade.Enum.Stone,
+                "metal" => BuildingGrade.Enum.Metal,
+                "hqm" => BuildingGrade.Enum.TopTier,
+                _ => BuildingGrade.Enum.None,
+            };
+            if (grade == BuildingGrade.Enum.None)
+                return;
+            var mode = arg.GetString(1, string.Empty);
+            var whole = mode.Equals("whole", StringComparison.OrdinalIgnoreCase);
+            if (!whole && !mode.Equals("single", StringComparison.OrdinalIgnoreCase))
+                return;
+
+            // CHANGE: Право по режиму: у массового апгрейда отдельная привилегия из конфига
+            // CHANGE (rremove.wholeupgrade), у одиночного — общая rremove.upgrade.
+            var requiredPerm = whole ? configData.Upgrade.WholeUpgradePermission : PermUpgrade;
+            if (!permission.UserHasPermission(player.UserIDString, requiredPerm))
+            {
+                Toast(player, Msg(player, "NoPermission"));
+                return;
+            }
+
+            if (activeRemovers.ContainsKey(player.userID))
+                Deactivate(player.userID);
+
+            // CHANGE: Повторный выбор того же типа и того же режима выключает режим —
+            // CHANGE прежняя семантика пунктов типов апгрейда перенесена в подменю.
+            if (
+                upgradeGrades.TryGetValue(player.userID, out var current)
+                && current.Grade == grade
+                && current.WholeBuilding == whole
+            )
+            {
+                DeactivateUpgrade(player.userID);
+                return;
+            }
+
+            // CHANGE: 1.6.0 — скин с палитрой открывает колесо выбора цвета до активации.
+            if (!TryOpenColourSelection(player, grade, whole))
+                ActivateUpgrade(player, grade, whole);
+        }
+
+        /// <summary>Иконка типа апгрейда из конфига pie-меню (пункт «Один блок» подменю).</summary>
+        private string GradePieIcon(BuildingGrade.Enum grade) =>
+            grade switch
+            {
+                BuildingGrade.Enum.Wood => configData.Gui.Pie.WoodIcon,
+                BuildingGrade.Enum.Stone => configData.Gui.Pie.StoneIcon,
+                BuildingGrade.Enum.Metal => configData.Gui.Pie.MetalIcon,
+                _ => configData.Gui.Pie.HqmIcon,
+            };
+
+        /// <summary>
+        /// No-op предикат апгрейда: блок уже имеет целевую марку, скин и цвет.
+        /// Инварианты: скин 0, скин без палитры или случайный цвет (0) перекраску считают
+        /// действием (совпадает с семантикой одиночного апгрейда: перескин/перекраска
+        /// той же марки — легитимные операции, ваниль оценивает их дешевле — 20%).
+        /// Сложность: O(1).
+        /// </summary>
+        private static bool IsUpgradeNoop(
+            BuildingBlock block, BuildingGrade.Enum grade, ulong skin, uint colour, bool skinHasPalette)
+        {
+            var colourNoop = skin == 0UL || !skinHasPalette || colour == 0u || block.customColour == colour;
+            return block.grade == grade && block.skinID == skin && colourNoop;
+        }
+
+        /// <summary>
+        /// Апгрейд всего строения (1.7.0): удар по блоку поднимает ВСЕ блоки строения
+        /// (группа BuildingManager по buildingID) до выбранного типа и скина.
+        /// Проверки выполняются один раз (право, CanBuild, шкаф строения, владение скином,
+        /// рейд/комбат-блок); сами блоки апгрейдятся пакетами в ProcessWholeUpgradeJob.
+        /// Инварианты: марка понижается ТОЛЬКО при AllowDowngrade (иначе блоки выше целевой
+        /// марки пропускаются); откат бесплатен и возвращает процент стоимости текущей
+        /// марки; no-op блоки (совпадение марки/скина/цвета) пропускаются; пара (тип, скин)
+        /// проверяется по данным префаба КАЖДОГО блока (ResolveSkinGrade откатывает
+        /// на стандартный скин там, где пара отсутствует).
+        /// Предусловия: state — активное состояние режима с WholeBuilding = true.
+        /// Постусловие: работа поставлена в wholeUpgradeJobs и обрабатывается пакетами.
+        /// Сложность: O(n) на сбор снимка, n — блоков строения; обработка O(n/b) тиков по b блоков.
+        /// </summary>
+        private void UpgradeWholeBuilding(BasePlayer player, BuildingBlock hitBlock, UpgradeState state)
+        {
+            // CHANGE: Право перепроверяется на каждом действии: снятие привилегии
+            // CHANGE немедленно выключает режим (симметрично одиночному апгрейду).
+            if (!permission.UserHasPermission(player.UserIDString, configData.Upgrade.WholeUpgradePermission))
+            {
+                Toast(player, Msg(player, "NoPermission"));
+                DeactivateUpgrade(player.userID);
+                return;
+            }
+            if (hitBlock == null || hitBlock.IsDestroyed)
+                return;
+
+            var grade = state.Grade;
+            // CHANGE: Скин мог стать недоступным (снята привилегия FreeSkinPermission):
+            // CHANGE выбор откатывается на «Без скина» — как в одиночном апгрейде.
+            if (state.Skin != 0UL && !CanUseBuildingSkin(player, state.Skin, IsAlwaysUnlocked(grade, state.Skin)))
+            {
+                SetSelectedSkin(player, grade, 0UL);
+                state.Skin = 0UL;
+                Toast(player, Msg(player, "SkinFallback"));
+            }
+            if (!player.CanBuild())
+            {
+                Toast(player, Msg(player, "UpgradeNoBuildAuth"));
+                return;
+            }
+
+            // CHANGE: Рейд/комбат-блок запрещает и массовый апгрейд (конфиг): поднимать
+            // CHANGE строение целиком под обстрелом/в рейде нельзя — это сильнее одиночного.
+            var deny = GetBlockDenyReason(player, out var denyLeft);
+            if (deny != null)
+            {
+                DenyToast(player, deny, denyLeft);
+                return;
+            }
+
+            // CHANGE: Шкаф строения обязателен по конфигу: пользовательский сценарий —
+            // CHANGE «стоит шкаф»; проверяется доминирующий шкаф САМОГО строения и
+            // CHANGE авторизация в нём (GetBuildingPrivilege у блока строения).
+            if (configData.Upgrade.UpgradeRequireCupboard)
+            {
+                var privilege = hitBlock.GetBuildingPrivilege();
+                if (privilege == null || !privilege.IsAuthed(player))
+                {
+                    Toast(player, Msg(player, "UpgradeNoCupboard"));
+                    return;
+                }
+            }
+
+            // CHANGE: Все блоки ОДНОГО строения: BuildingManager группирует блоки по
+            // CHANGE buildingID (StabilityEntity.buildingID) — тот же источник, что у
+            // CHANGE «Удаления строения» (RemoveAllConnected).
+            var building = BuildingManager.server?.GetBuilding(hitBlock.buildingID);
+            if (building == null)
+            {
+                Toast(player, Msg(player, "NoBuilding"));
+                return;
+            }
+
+            // CHANGE: Снимок в список: buildingBlocks меняется во время обработки
+            // CHANGE (ChangeGradeAndSkin шлёт сетевые обновления и трогает upkeep),
+            // CHANGE итерация по живой коллекции небезопасна. Понижение марки — по конфигу
+            // CHANGE AllowDowngrade: запрещено — блоки выше целевого типа пропускаются
+            // CHANGE (ваниль тоже запрещает даунгрейд); разрешено — они станут откатом
+            // CHANGE с возвратом части стоимости текущей марки (ProcessWholeUpgradeJob).
+            var blocks = new List<BuildingBlock>();
+            foreach (var block in building.buildingBlocks)
+            {
+                if (block == null || block.IsDestroyed)
+                    continue;
+                if (block.grade > grade && !configData.Upgrade.AllowDowngrade)
+                    continue;
+                if (IsUpgradeNoop(block, grade, state.Skin, state.Colour, colourPalettes.ContainsKey(state.Skin)))
+                    continue;
+                blocks.Add(block);
+            }
+            if (blocks.Count == 0)
+                return;
+
+            // CHANGE: Параметры фиксируются снимком: смена выбора в меню посреди обработки
+            // CHANGE не рвёт согласованность (половина строения другим скином). Бесплатность:
+            // CHANGE только право rremove.nocost — отдельного флага конфига больше нет.
+            wholeUpgradeJobs[player.userID] = new WholeUpgradeJob
+            {
+                PlayerId = player.userID,
+                Blocks = blocks,
+                Grade = grade,
+                Skin = state.Skin,
+                Colour = state.Colour,
+                // CHANGE: Бесплатность ТОЛЬКО по праву rremove.nocost: бесплатный массовый
+                // CHANGE апгрейд для обычных игроков запрещён (конфиг-флаг удалён).
+                Free = permission.UserHasPermission(player.UserIDString, PermNoCost),
+                PlayEffect = configData.Upgrade.WholeUpgradePlayEffect,
+            };
+            ScheduleWholeUpgradeTick();
+
+            // CHANGE: Успешный запуск продлевает режим — симметрично одиночному апгрейду.
+            state.ExpiresAt = Time.realtimeSinceStartup + Mathf.Max(1f, configData.Upgrade.UpgradeModeDuration);
+            UpdateUpgradeLabel(player, state, Mathf.CeilToInt(state.ExpiresAt - Time.realtimeSinceStartup));
+            Toast(player, Msg(player, "WholeUpgradeStarted").Replace(
+                "{0}", blocks.Count.ToString(CultureInfo.InvariantCulture)));
+        }
+
+        /// <summary>
+        /// Планирует тик пакетной обработки, если он ещё не запланирован: цепочка timer.Once
+        /// без хранения Timer в поле (тип Timer недоступен при нативной компиляции Carbon —
+        /// см. комментарий к тикеру режимов). Инвариант: не более одной запланированной цепочки.
+        /// Сложность: O(1).
+        /// </summary>
+        private void ScheduleWholeUpgradeTick()
+        {
+            if (wholeUpgradeScheduled)
+                return;
+            wholeUpgradeScheduled = true;
+            timer.Once(
+                Mathf.Max(0.01f, configData.Upgrade.WholeUpgradeBatchInterval),
+                ProcessWholeUpgradeJobs);
+        }
+
+        /// <summary>
+        /// Один тик пакетной обработки: каждое активное задание получает порцию блоков.
+        /// Инварианты: задание умирает при выходе игрока (платить некому); по исчерпании
+        /// всех заданий цепочка планирования останавливается.
+        /// Сложность: O(j·b) за тик, j — активные задания, b — размер пакета.
+        /// </summary>
+        private void ProcessWholeUpgradeJobs()
+        {
+            wholeUpgradeScheduled = false;
+            if (wholeUpgradeJobs.Count == 0)
+                return;
+            foreach (var job in wholeUpgradeJobs.Values.ToArray())
+                ProcessWholeUpgradeJob(job);
+            if (wholeUpgradeJobs.Count > 0)
+                ScheduleWholeUpgradeTick();
+        }
+
+        /// <summary>
+        /// Обрабатывает одну порцию (пакет) задания массового апгрейда.
+        /// Инварианты: на каждый блок — та же цепочка проверок, что у одиночного апгрейда:
+        /// пара (тип, скин) по данным префаба (откат на стандартный скин), владение скином
+        /// уже проверено на старте (пары без отката несут выбранный скин), оплата — только
+        /// когда задание не бесплатное; цвет палитры привязан к фактическому скину блока
+        /// (NRE-риск GetStartingDetailColour при пустом currentSkin); уничтоженные блоки
+        /// пропускаются. По исчерпании списка задание завершается итоговыми тостами.
+        /// Предусловие: job — активное задание из wholeUpgradeJobs.
+        /// Сложность: O(b) времени за вызов, b — размер пакета.
+        /// </summary>
+        private void ProcessWholeUpgradeJob(WholeUpgradeJob job)
+        {
+            var player = BasePlayer.FindByID(job.PlayerId);
+            // CHANGE: Игрок вышел — задание умирает: платить за оставшиеся блоки некому.
+            if (player == null || !player.IsConnected)
+            {
+                wholeUpgradeJobs.Remove(job.PlayerId);
+                return;
+            }
+
+            var end = Mathf.Min(job.Index + Mathf.Max(1, configData.Upgrade.WholeUpgradeBatchSize), job.Blocks.Count);
+            for (; job.Index < end; job.Index++)
+            {
+                var block = job.Blocks[job.Index];
+                if (block == null || block.IsDestroyed)
+                    continue;
+                // CHANGE: Пара (тип, скин) проверяется по данным префаба КАЖДОГО блока:
+                // CHANGE стены/полы/фундаменты поддерживают разные наборы скинов; при
+                // CHANGE отсутствии пары блок откатывается на стандартный скин.
+                var skinGrade = ResolveSkinGrade(block, job.Grade, job.Skin, out var fallbackUsed);
+                if (skinGrade == null)
+                {
+                    job.SkippedSkin++;
+                    continue;
+                }
+                if (fallbackUsed)
+                    job.FallbackToast = true;
+
+                // CHANGE: 1.7.0 — направление по марке блока: понижение (откат) — бесплатно,
+                // CHANGE с возвратом части стоимости ТЕКУЩЕЙ марки (DowngradeRefundPercent);
+                // CHANGE повышение — оплата как раньше (право rremove.nocost в снимке Free).
+                if (block.grade > job.Grade)
+                {
+                    RefundDowngradeCost(player, block);
+                }
+                else if (!job.Free)
+                {
+                    if (!block.CanAffordUpgrade(job.Grade, skinGrade.gradeBase.skin, player))
+                    {
+                        job.SkippedCost++;
+                        continue;
+                    }
+                    block.PayForUpgrade(skinGrade, player);
+                }
+
+                // CHANGE: Цвет только для скинов с палитрой и только если блок реально несёт
+                // CHANGE палитровый скин (после отката на стандартный currentSkin == null и
+                // CHANGE GetStartingDetailColour падал бы NRE — см. UpgradeBlock).
+                var paletteColour = skinGrade.gradeBase.skin != 0UL
+                    && colourPalettes.ContainsKey(skinGrade.gradeBase.skin)
+                    ? job.Colour
+                    : (uint?)null;
+                block.ChangeGradeAndSkin(
+                    skinGrade.gradeBase.type,
+                    skinGrade.gradeBase.skin,
+                    job.PlayEffect,
+                    updateSkin: true,
+                    color: paletteColour);
+                job.Upgraded++;
+            }
+
+            if (job.Index < job.Blocks.Count)
+                return;
+            wholeUpgradeJobs.Remove(job.PlayerId);
+            // CHANGE: Итоговая обратная связь. БАГ-ФИКС UX: если ни один блок не поднят из-за
+            // CHANGE нехватки ресурсов — одна ясная причина вместо «завершён: 0 блок(ов)».
+            if (job.Upgraded == 0 && job.SkippedCost > 0)
+            {
+                Toast(player, Msg(player, "UpgradeNoResources"));
+                return;
+            }
+            Toast(player, Msg(player, "WholeUpgradeDone").Replace(
+                "{0}", job.Upgraded.ToString(CultureInfo.InvariantCulture)));
+            if (job.SkippedCost > 0)
+            {
+                Toast(player, Msg(player, "WholeUpgradeSkipped").Replace(
+                    "{0}", job.SkippedCost.ToString(CultureInfo.InvariantCulture)));
+            }
+            if (job.FallbackToast)
+                Toast(player, Msg(player, "SkinFallback"));
+        }
+
+        #endregion Апгрейд всего здания (1.7.0)
+
+        /// <summary>
+        /// Отправляет игроку нативное радиальное меню (RPC OpenPie) с выбором режима удаления и пунктом закрытия.
+        /// Инвариант: пункты «Админский ремув» и «Удаление строения» добавляются ТОЛЬКО игрокам
+        /// с rremove.admin — у остальных их в меню нет вовсе (не disabled, а полное отсутствие);
+        /// прямые консольные команды rremove.mode.admin/all по-прежнему отклоняются в HandleModeSelection.
         /// Сложность: O(1).
         /// </summary>
         private void SendRadialMenu(BasePlayer player)
@@ -1646,12 +2312,19 @@ namespace Oxide.Plugins
                 AddPieOption(
                     pie, Msg(player, "PieDefault"), Msg(player, "PieDefaultDesc"),
                     "rremove.mode.default", pieConfig.DefaultIcon, disabled: false);
-                AddPieOption(
-                    pie, Msg(player, "PieAdmin"), Msg(player, "PieAdminDesc"),
-                    "rremove.mode.admin", pieConfig.AdminIcon, disabled: !admin);
-                AddPieOption(
-                    pie, Msg(player, "PieAll"), Msg(player, "PieAllDesc"),
-                    "rremove.mode.all", pieConfig.AllIcon, disabled: !admin);
+                // CHANGE: Админские пункты («Админский ремув», «Удаление строения») не добавляются
+                // CHANGE: в меню игрокам без rremove.admin: серые неактивные секторы вводили в
+                // CHANGE: заблуждение и порождали лишние вопросы. Право на эти режимы по-прежнему
+                // CHANGE: проверяется серверно в HandleModeSelection (защита от прямых команд).
+                if (admin)
+                {
+                    AddPieOption(
+                        pie, Msg(player, "PieAdmin"), Msg(player, "PieAdminDesc"),
+                        "rremove.mode.admin", pieConfig.AdminIcon, disabled: false);
+                    AddPieOption(
+                        pie, Msg(player, "PieAll"), Msg(player, "PieAllDesc"),
+                        "rremove.mode.all", pieConfig.AllIcon, disabled: false);
+                }
 
                 // CHANGE: Типы автоапгрейда — только при включенной функции; пункты видны всем,
                 // CHANGE: но заблокированы без привилегии rremove.upgrade (rremove.admin их не даёт).
@@ -1685,6 +2358,10 @@ namespace Oxide.Plugins
                         "rremove.grade.hqm", pieConfig.HqmIcon, disabled: !canUpgrade,
                         next: hqmPager ? SkinPageCommand(BuildingGrade.Enum.TopTier, 1) : string.Empty,
                         prev: hqmPager ? SkinPageCommand(BuildingGrade.Enum.TopTier, -1) : string.Empty);
+
+                    // CHANGE: 1.7.0 — верхнего пункта «Апгрейд всего здания» больше нет:
+                    // CHANGE подменю «Всё здание / Один блок» открывается ПОСЛЕ выбора типа
+                    // CHANGE (SendGradeSubmenu из HandleGradeSelection).
 
                     // CHANGE: 1.5.3 — кнопка «Скины построек» и её подменю удалены по требованию
                     // CHANGE: владельца: выбор скина — только пейджер Q/E у типов апгрейда.
@@ -1743,6 +2420,7 @@ namespace Oxide.Plugins
             {
                 Mode = mode,
                 ExpiresAt = Time.realtimeSinceStartup + duration,
+                LastShownSeconds = Mathf.CeilToInt(duration),
             };
             // CHANGE: Информация о режиме (тип и остаток времени) отображается в панели, а не в чате.
             // CHANGE: Остаток времени передаётся в панель сразу — раньше лейбл таймера
@@ -1882,8 +2560,9 @@ namespace Oxide.Plugins
             var namesRu = new Dictionary<string, string>(
                 lang.GetMessages("ru", this) ?? new Dictionary<string, string>()
             );
-            MergeLangFileOverlay(namesEn, "en");
-            MergeLangFileOverlay(namesRu, "ru");
+            // CHANGE: Серверный lang-оверлей уже смержен в регистрируемые словари в
+            // LoadDefaultMessages (до первой RegisterMessages): GetMessages возвращает
+            // содержимое файла уже после того мержа, повторный оверлей здесь бесполезен.
 
             foreach (var pair in skinNamesById)
             {
@@ -1913,35 +2592,6 @@ namespace Oxide.Plugins
 
             lang.RegisterMessages(namesEn, this, "en");
             lang.RegisterMessages(namesRu, this, "ru");
-        }
-
-        /// <summary>
-        /// Накладывает поверх словаря переводов правки сервера из файла lang/&lt;язык&gt;/RRemove.json:
-        /// lang.GetMessages возвращает только словари, зарегистрированные кодом, поэтому ключи,
-        /// добавленные сервером напрямую в файл (например, Skin10220 для скина из конфига вне
-        /// игровых данных), иначе терялись бы при перерегистрации.
-        /// Постусловие: entries содержит все пары файла; значения файла приоритетнее кодовых.
-        /// Сложность: O(n), n — число ключей файла.
-        /// </summary>
-        private void MergeLangFileOverlay(Dictionary<string, string> entries, string langCode)
-        {
-            try
-            {
-                var fromDisk =
-                    Interface.Oxide.DataFileSystem.ReadObject<Dictionary<string, string>>(
-                        $"lang/{langCode}/{Title}"
-                    ) ?? new Dictionary<string, string>();
-                foreach (var pair in fromDisk)
-                {
-                    if (!string.IsNullOrEmpty(pair.Key) && pair.Value != null)
-                        entries[pair.Key] = pair.Value;
-                }
-            }
-            catch (Exception ex)
-            {
-                // Файл может отсутствовать или быть повреждён — не критично.
-                Puts($"[RRemove] Не удалось прочитать lang/{langCode}/{Title}.json: {ex.Message}");
-            }
         }
 
         /// <summary>
@@ -1988,9 +2638,12 @@ namespace Oxide.Plugins
                     // displayName предмета скина (skin.itemid), иначе «очеловечиваем» путь:
                     // последний сегмент без ".sitem.asset", подчёркивания → пробелы.
                     var skinItemDef = ItemManager.FindItemDefinition(skin.itemid);
-                    string display = skinItemDef?.displayName?.english;
+                    // CHANGE (nullable): displayName?.english и PrettifySkinAssetPath() по постусловию
+                    // допускают null — сводим оба к непустой строке через ?? string.Empty; дальнейшая
+                    // проверка IsNullOrEmpty отбрасывает пустое значение так же, как раньше null.
+                    string display = skinItemDef?.displayName?.english ?? string.Empty;
                     if (string.IsNullOrEmpty(display))
-                        display = PrettifySkinAssetPath(skin.name);
+                        display = PrettifySkinAssetPath(skin.name) ?? string.Empty;
                     if (!string.IsNullOrEmpty(display))
                         return display;
                 }
@@ -2435,7 +3088,13 @@ namespace Oxide.Plugins
             {
                 if (entity is BuildingBlock block)
                 {
-                    UpgradeBlock(player, block, upgradeGrades[player.userID]);
+                    // CHANGE: 1.7.0 — подрежим «апгрейд всего здания»: удар поднимает всё
+                    // CHANGE строение (buildingID); одиночный режим — только задетый блок.
+                    var upgradeState = upgradeGrades[player.userID];
+                    if (upgradeState.WholeBuilding)
+                        UpgradeWholeBuilding(player, block, upgradeState);
+                    else
+                        UpgradeBlock(player, block, upgradeState);
                     return true;
                 }
                 return null;
@@ -2458,7 +3117,18 @@ namespace Oxide.Plugins
             }
 
             // CHANGE: Внешние плагины могут запретить удаление, вернув строку из хука canRemove.
-            if (Interface.CallHook("canRemove", player, entity) is string hookReason)
+            // CHANGE: Флаг исключает повторную ValidateRemove самого RRemove внутри глобального dispatch.
+            object? externalHookResult;
+            skipOwnCanRemoveValidation = true;
+            try
+            {
+                externalHookResult = Interface.CallHook("canRemove", player, entity);
+            }
+            finally
+            {
+                skipOwnCanRemoveValidation = false;
+            }
+            if (externalHookResult is string hookReason)
             {
                 Toast(player, hookReason);
                 return true;
@@ -2484,7 +3154,11 @@ namespace Oxide.Plugins
         private void RefreshRemoveTimer(BasePlayer player, RemoveState state)
         {
             state.ExpiresAt = Time.realtimeSinceStartup + Mathf.Max(1f, configData.Remove.ModeDuration);
-            UpdateTimerLabel(player, Mathf.CeilToInt(state.ExpiresAt - Time.realtimeSinceStartup));
+            var secondsLeft = Mathf.CeilToInt(state.ExpiresAt - Time.realtimeSinceStartup);
+            if (secondsLeft == state.LastShownSeconds)
+                return;
+            state.LastShownSeconds = secondsLeft;
+            UpdateTimerLabel(player, secondsLeft);
         }
 
         /// <summary>
@@ -2494,6 +3168,8 @@ namespace Oxide.Plugins
         [HookMethod("canRemove")]
         private object? canRemove(BasePlayer player, BaseEntity entity)
         {
+            if (skipOwnCanRemoveValidation)
+                return null;
             if (player == null || entity == null)
                 return "Некорректные аргументы.";
             return ValidateRemove(player, entity, IsAdmin(player));
@@ -3046,9 +3722,10 @@ namespace Oxide.Plugins
 
         /// <summary>
         /// Рисует индикатор режима апгрейда: заголовок, выбранный тип с таймером и подсказка.
-        /// Все значения — из конфига.
+        /// Все значения — из конфига. CHANGE: 1.7.0 — wholeBuilding меняет заголовок и
+        /// подсказку на подрежим «апгрейд всего здания» (панель и её настройки те же).
         /// </summary>
-        private void ShowUpgradeUi(BasePlayer player, BuildingGrade.Enum grade, int secondsLeft)
+        private void ShowUpgradeUi(BasePlayer player, BuildingGrade.Enum grade, bool wholeBuilding, int secondsLeft)
         {
             var gui = configData.Gui;
             if (!gui.Enabled || player == null)
@@ -3120,7 +3797,8 @@ namespace Oxide.Plugins
                 {
                     new CuiTextComponent
                     {
-                        Text = $"{Msg(player, "GuiUpgradeTitle")}: {gradeName}",
+                        // CHANGE: 1.7.0 — заголовок зависит от подрежима (всё здание / одиночный).
+                        Text = $"{Msg(player, wholeBuilding ? "GuiWholeUpgradeTitle" : "GuiUpgradeTitle")}: {gradeName}",
                         FontSize = gui.Title.FontSize,
                         Color = gui.Title.Color,
                         Align = TextAnchor.MiddleCenter,
@@ -3142,7 +3820,8 @@ namespace Oxide.Plugins
                 {
                     new CuiTextComponent
                     {
-                        Text = Msg(player, "GuiUpgradeHint"),
+                        // CHANGE: 1.7.0 — подсказка зависит от подрежима (всё здание / одиночный).
+                        Text = Msg(player, wholeBuilding ? "GuiWholeUpgradeHint" : "GuiUpgradeHint"),
                         FontSize = gui.Hint.FontSize,
                         Color = gui.Hint.Color,
                         Align = TextAnchor.MiddleCenter,
